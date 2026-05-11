@@ -1,0 +1,80 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --font-sans: var(--app-font-sans);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+:root {
+  --background: 20 14% 6%;
+  --foreground: 30 20% 90%;
+  --border: 25 15% 20%;
+  --input: 25 15% 20%;
+  --ring: 35 60% 45%;
+  --primary: 35 60% 45%;
+  --primary-foreground: 30 20% 95%;
+  --secondary: 25 15% 20%;
+  --secondary-foreground: 30 20% 80%;
+  --muted: 25 10% 15%;
+  --muted-foreground: 30 10% 50%;
+  --accent: 35 50% 35%;
+  --accent-foreground: 30 20% 95%;
+  --destructive: 0 70% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --app-font-sans: 'Inter', sans-serif;
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+@keyframes fadeToBlack {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeFromBlack {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
