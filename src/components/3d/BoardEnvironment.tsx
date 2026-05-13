@@ -131,12 +131,13 @@ function DriftingMist({
 
 function StormBeachBackdrop({ textureUrl }: { textureUrl: string }) {
   const texture = useLoader(THREE.TextureLoader, textureUrl);
-  const radius = 96;
+  const radius = 260;
   const floorY = -0.44;
   const centerY = 2.8;
   const phiStart = 0.08;
   const phiEndAtFloor = Math.acos((floorY - centerY) / radius);
-  const phiLength = phiEndAtFloor - phiStart;
+  const phiEndBelowFloor = Math.min(Math.PI - 0.04, phiEndAtFloor + 0.22);
+  const phiLength = phiEndBelowFloor - phiStart;
   const geometry = useMemo(() => {
     const domeGeometry = new THREE.SphereGeometry(
       radius,
@@ -153,7 +154,7 @@ function StormBeachBackdrop({ textureUrl }: { textureUrl: string }) {
       const u = uvAttribute.getX(i);
       const v = uvAttribute.getY(i);
       const distanceFromFloor = 1 - v;
-      const fisheyeV = 1 - Math.pow(distanceFromFloor, 1.55);
+      const fisheyeV = 1 - Math.pow(distanceFromFloor, 1.35);
       uvAttribute.setXY(i, u, fisheyeV);
     }
 
@@ -169,15 +170,51 @@ function StormBeachBackdrop({ textureUrl }: { textureUrl: string }) {
     texture.offset.set(0, 0);
   }, [texture]);
 
+  const material = useMemo(() => {
+    const backdropMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: texture },
+        fadeColor: { value: new THREE.Color(0x070807) },
+        floorY: { value: floorY },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying float vWorldY;
+
+        void main() {
+          vUv = uv;
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldY = worldPosition.y;
+          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform vec3 fadeColor;
+        uniform float floorY;
+        varying vec2 vUv;
+        varying float vWorldY;
+
+        void main() {
+          vec4 sampled = texture2D(map, vUv);
+          float worldFade = 1.0 - smoothstep(floorY + 4.0, floorY + 30.0, vWorldY);
+          float uvFade = smoothstep(0.72, 0.98, vUv.y) * 0.65;
+          float fade = clamp(max(worldFade, uvFade), 0.0, 0.985);
+          gl_FragColor = vec4(mix(sampled.rgb, fadeColor, fade), sampled.a);
+        }
+      `,
+      side: THREE.BackSide,
+      fog: false,
+      depthWrite: false,
+    });
+
+    backdropMaterial.toneMapped = false;
+    return backdropMaterial;
+  }, [texture, floorY]);
+
   return (
     <mesh geometry={geometry} position={[0, centerY, 0]} rotation={[0, Math.PI, 0]}>
-      <meshBasicMaterial
-        map={texture}
-        side={THREE.BackSide}
-        fog={false}
-        toneMapped={false}
-        depthWrite={false}
-      />
+      <primitive object={material} attach="material" />
     </mesh>
   );
 }
@@ -209,7 +246,7 @@ function StormBeachGround({ theme }: BoardEnvironmentProps) {
   return (
     <>
       <mesh position={[0, -0.44, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[170, 170, 1, 1]} />
+        <planeGeometry args={[520, 520, 1, 1]} />
         <primitive object={material} attach="material" />
       </mesh>
     </>

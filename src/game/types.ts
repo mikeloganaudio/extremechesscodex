@@ -29,11 +29,25 @@ export interface Move {
   promotionPiece?: PieceType;
   isCastle?: "kingside" | "queenside";
   isEnPassant?: boolean;
+  /** Set when the turn action was a Rubik's row/column shift rather than a piece move. */
+  rubiksShift?: RubiksShift;
   /** Set when the piece that moved was teleported by a snake or ladder. */
   teleportedTo?: Square;
+  /** Set when a snake/ladder teleport captured a piece at the exit square. */
+  teleportCapturedPiece?: Piece;
   /** Set when the move ended on a mine and destroyed the moving piece. */
   mineTriggeredAt?: Square;
 }
+
+export interface RubiksShift {
+  axis: "row" | "col";
+  index: number;
+  amount: number;
+}
+
+export type TurnAction =
+  | { kind: "move"; move: Move }
+  | { kind: "rubiks-shift"; shift: RubiksShift };
 
 export type GameStatus =
   | "playing"
@@ -99,4 +113,6 @@ export interface RulesConfig {
   snakesAndLadders: SnakeLadder[];
   /** Active booby-trapped squares. Empty array = disabled. */
   mines: Mine[];
+  /** Allows row/column wrap shifts as a turn action. */
+  rubiksMode?: boolean;
 }

@@ -15,9 +15,9 @@ export const deathBoardTheme: BoardThemeConfig = {
   },
   camera: {
     playPosition: [0, 9.7, 8.4],
-    introStartRadius: 72,
+    introStartRadius: 48,
     introEndRadius: 10,
-    introStartHeight: 30,
+    introStartHeight: 11.5,
     introEndHeight: 9.5,
   },
   environment: {
@@ -46,7 +46,7 @@ export const racingBoardTheme: BoardThemeConfig = {
   id: "racing-board",
   label: "Ranged advance board",
   lightSquare: 0xf4f4ef,
-  darkSquare: 0x050505,
+  darkSquare: 0x141414,
   rim: 0x161616,
   underside: 0x080808,
   boardDecor: "racing",

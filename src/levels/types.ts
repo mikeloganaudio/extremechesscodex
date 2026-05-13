@@ -4,7 +4,8 @@ export type MechanicId =
   | "classic-chess"
   | "pawn-range"
   | "snakes-ladders"
-  | "minesweeper";
+  | "minesweeper"
+  | "rubiks";
 export type GameModeId = "chess-board-3d";
 export type CampaignPhase =
   | "intro-video"

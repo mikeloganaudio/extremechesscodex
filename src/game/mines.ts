@@ -33,5 +33,5 @@ export function generateMines(count: number): Mine[] {
 }
 
 export function randomMineCount(): number {
-  return 4 + Math.floor(Math.random() * 3);
+  return 5 + Math.floor(Math.random() * 2);
 }

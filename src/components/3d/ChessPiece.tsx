@@ -1,15 +1,23 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { PieceType, PieceColor } from "@/game/types";
 
 const WHITE_MAT = new THREE.MeshLambertMaterial({ color: 0xf5ead6 });
-const BLACK_MAT = new THREE.MeshLambertMaterial({ color: 0x1e110a });
+const BLACK_MAT = new THREE.MeshLambertMaterial({ color: 0x3b3630 });
 const WHITE_TRIM = new THREE.MeshLambertMaterial({ color: 0xe8c97a });
 const BLACK_TRIM = new THREE.MeshLambertMaterial({ color: 0x7a5a1a });
+const BLACK_RIM = new THREE.MeshLambertMaterial({
+  color: 0xe2ded2,
+  transparent: true,
+  opacity: 0.42,
+});
 
-function mat(color: PieceColor) {
-  return color === "white" ? WHITE_MAT : BLACK_MAT;
+type PieceVisualVariant = "default" | "racing";
+
+function mat(color: PieceColor, variant: PieceVisualVariant = "default") {
+  if (color === "white") return WHITE_MAT;
+  return BLACK_MAT;
 }
 function trim(color: PieceColor) {
   return color === "white" ? WHITE_TRIM : BLACK_TRIM;
@@ -17,17 +25,17 @@ function trim(color: PieceColor) {
 
 /* ── Shared geometry helpers ── */
 
-function Base({ r, color }: { r: number; color: PieceColor }) {
+function Base({ r, color, variant = "default" }: { r: number; color: PieceColor; variant?: PieceVisualVariant }) {
   return (
-    <mesh material={mat(color)} position={[0, 0.04, 0]} castShadow>
+    <mesh material={mat(color, variant)} position={[0, 0.04, 0]} castShadow>
       <cylinderGeometry args={[r * 0.82, r, 0.08, 10]} />
     </mesh>
   );
 }
 
-function Disc({ y, r, color }: { y: number; r: number; color: PieceColor }) {
+function Disc({ y, r, color, variant = "default" }: { y: number; r: number; color: PieceColor; variant?: PieceVisualVariant }) {
   return (
-    <mesh material={mat(color)} position={[0, y, 0]} castShadow>
+    <mesh material={mat(color, variant)} position={[0, y, 0]} castShadow>
       <cylinderGeometry args={[r, r * 1.08, 0.05, 10]} />
     </mesh>
   );
@@ -304,6 +312,7 @@ interface ChessPieceProps {
   position: [number, number, number];
   isSelected: boolean;
   isHovered?: boolean;
+  visualVariant?: PieceVisualVariant;
 }
 
 export function ChessPiece({
@@ -312,24 +321,74 @@ export function ChessPiece({
   position,
   isSelected,
   isHovered = false,
+  visualVariant = "default",
 }: ChessPieceProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const currentY = useRef(position[1]);
-  const currentRot = useRef(0);
+  const currentPosition = useRef(new THREE.Vector3(...position));
+  const moveStart = useRef(new THREE.Vector3(...position));
+  const moveTarget = useRef(new THREE.Vector3(...position));
+  const moveProgress = useRef(1);
+  const liftY = useRef(0);
+  const tiltX = useRef(0);
+  const tiltZ = useRef(0);
 
-  useFrame((_, delta) => {
-    if (!groupRef.current) return;
-    const liftY = isSelected ? 0.45 : isHovered ? 0.14 : 0;
-    const targetY = position[1] + liftY;
-    currentY.current += (targetY - currentY.current) * Math.min(delta * 14, 1);
-    groupRef.current.position.set(position[0], currentY.current, position[2]);
+  useEffect(() => {
+    const nextTarget = new THREE.Vector3(...position);
+    if (nextTarget.distanceTo(moveTarget.current) < 0.001) return;
 
-    if (isSelected) {
-      currentRot.current += delta * 1.8;
-    } else {
-      currentRot.current += (0 - currentRot.current) * Math.min(delta * 10, 1);
+    moveStart.current.copy(currentPosition.current);
+    moveTarget.current.copy(nextTarget);
+    moveProgress.current = 0;
+    if (type !== "knight") {
+      liftY.current = 0;
     }
-    groupRef.current.rotation.y = currentRot.current;
+  }, [position, type]);
+
+  useEffect(() => {
+    if (!groupRef.current || color !== "black") return;
+
+    groupRef.current.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      if (child.material === BLACK_MAT) {
+        child.material = BLACK_MAT;
+      }
+    });
+  }, [color, type]);
+
+  useFrame(({ clock }, delta) => {
+    if (!groupRef.current) return;
+    const moveDuration = type === "knight" ? 0.62 : 0.74;
+    moveProgress.current = Math.min(1, moveProgress.current + delta / moveDuration);
+    const easedMove =
+      moveProgress.current *
+      moveProgress.current *
+      (3 - 2 * moveProgress.current);
+    currentPosition.current.lerpVectors(moveStart.current, moveTarget.current, easedMove);
+
+    const targetLift = isSelected ? 0.48 : isHovered ? 0.11 : 0;
+    liftY.current += (targetLift - liftY.current) * Math.min(delta * 6.5, 1);
+
+    const isMoving = moveProgress.current < 1;
+    const knightHop = type === "knight" && isMoving
+      ? Math.sin(moveProgress.current * Math.PI) * 0.58
+      : 0;
+
+    const selectedSway = isSelected ? Math.sin(clock.elapsedTime * 1.4) : 0;
+    const targetTiltX = isSelected ? 0.12 + selectedSway * 0.025 : 0;
+    const targetTiltZ = isSelected ? -0.1 + Math.cos(clock.elapsedTime * 1.2) * 0.02 : 0;
+    tiltX.current += (targetTiltX - tiltX.current) * Math.min(delta * 5.5, 1);
+    tiltZ.current += (targetTiltZ - tiltZ.current) * Math.min(delta * 5.5, 1);
+
+    groupRef.current.position.set(
+      currentPosition.current.x,
+      currentPosition.current.y + liftY.current + knightHop,
+      currentPosition.current.z,
+    );
+    groupRef.current.rotation.set(
+      tiltX.current,
+      isSelected ? selectedSway * 0.08 : 0,
+      tiltZ.current,
+    );
   });
 
   const MeshComponent = PIECE_MESHES[type];
@@ -337,6 +396,23 @@ export function ChessPiece({
   return (
     <group ref={groupRef} position={position}>
       <MeshComponent color={color} />
+      {color === "black" && <BlackPieceRim />}
+    </group>
+  );
+}
+
+function BlackPieceRim() {
+  return (
+    <group raycast={() => null}>
+      <mesh material={BLACK_RIM} position={[0, 0.105, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.2, 0.012, 6, 24]} />
+      </mesh>
+      <mesh material={BLACK_RIM} position={[0, 0.48, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.125, 0.009, 6, 22]} />
+      </mesh>
+      <mesh material={BLACK_RIM} position={[0, 0.02, 0]}>
+        <cylinderGeometry args={[0.24, 0.26, 0.016, 20]} />
+      </mesh>
     </group>
   );
 }

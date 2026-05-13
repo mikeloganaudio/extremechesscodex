@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import * as THREE from "three";
-import type { GameState, Mine, Move, Square, SnakeLadder } from "@/game/types";
+import type { GameState, Mine, Move, Piece, RubiksShift, Square, SnakeLadder } from "@/game/types";
 import type { BoardThemeConfig } from "@/levels/types";
 import { ChessPiece } from "./ChessPiece";
 import { BoardEnvironment } from "./BoardEnvironment";
@@ -149,6 +149,7 @@ function PixelLabel({
 /* ── Board notation labels ── */
 function BoardNotation({ theme }: { theme: BoardThemeConfig }) {
   if (theme.boardDecor === "retro-lcd") return <RetroBoardNotation />;
+  if (theme.boardDecor === "rubiks") return <RubiksBoardNotation />;
 
   const labelColor = "#b8a090";
   const labelSize = 0.22;
@@ -228,6 +229,107 @@ function BoardNotation({ theme }: { theme: BoardThemeConfig }) {
   return <>{labels}</>;
 }
 
+function RubiksBoardNotation() {
+  const labels: React.ReactNode[] = [];
+  const cubeColors = [
+    "#f2f0e8",
+    "#ffd21f",
+    "#ff7a18",
+    "#db2027",
+    "#179b49",
+    "#1657d8",
+  ];
+  const fileColors = [...cubeColors, cubeColors[0], cubeColors[1]];
+  const rankColors = [...cubeColors, cubeColors[2], cubeColors[3]];
+  const labelSize = 0.39;
+  const labelHeight = 0.078;
+  const frontBackZ = 4.4;
+  const sideX = 4.4;
+
+  for (let col = 0; col < 8; col++) {
+    const wx = col * SQUARE_SIZE - 3.5;
+    labels.push(
+      <Text
+        key={`rubiks-col-front-${col}`}
+        position={[wx, labelHeight, frontBackZ]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={labelSize}
+        color={fileColors[col]}
+        fillOpacity={0.96}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.018}
+        outlineColor="#050505"
+        font={undefined}
+      >
+        {COL_LETTERS[col]}
+      </Text>,
+    );
+    labels.push(
+      <Text
+        key={`rubiks-col-back-${col}`}
+        position={[wx, labelHeight, -frontBackZ]}
+        rotation={[-Math.PI / 2, 0, Math.PI]}
+        fontSize={labelSize}
+        color={fileColors[col]}
+        fillOpacity={0.96}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.018}
+        outlineColor="#050505"
+        font={undefined}
+      >
+        {COL_LETTERS[col]}
+      </Text>,
+    );
+  }
+
+  for (let row = 0; row < 8; row++) {
+    const wz = -(row * SQUARE_SIZE - 3.5);
+    const rankNum = String(row + 1);
+    labels.push(
+      <Text
+        key={`rubiks-row-left-${row}`}
+        position={[-sideX, labelHeight, wz]}
+        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+        fontSize={labelSize}
+        color={rankColors[row]}
+        fillOpacity={0.96}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.018}
+        outlineColor="#050505"
+        font={undefined}
+      >
+        {rankNum}
+      </Text>,
+    );
+    labels.push(
+      <Text
+        key={`rubiks-row-right-${row}`}
+        position={[sideX, labelHeight, wz]}
+        rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
+        fontSize={labelSize}
+        color={rankColors[row]}
+        fillOpacity={0.96}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.018}
+        outlineColor="#050505"
+        font={undefined}
+      >
+        {rankNum}
+      </Text>,
+    );
+  }
+
+  return <>{labels}</>;
+}
+
 function RetroBoardNotation() {
   const labels: React.ReactNode[] = [];
   const color = 0x111f12;
@@ -295,10 +397,17 @@ interface BoardSquareProps {
   isLight: boolean;
   isSelected: boolean;
   isValidMove: boolean;
+  isCaptureMove: boolean;
   isCheck: boolean;
   theme: BoardThemeConfig;
   onClick: (row: number, col: number) => void;
   onHover: (row: number, col: number, on: boolean) => void;
+  onDragStart: (row: number, col: number, point: THREE.Vector3) => void;
+  onDragEnd: (row: number, col: number, point: THREE.Vector3) => void;
+  visualOffset: [number, number, number];
+  wrapOffset: [number, number, number] | null;
+  isRubiksDragOrigin: boolean;
+  isRubiksDragLine: boolean;
 }
 
 function BoardSquare({
@@ -307,10 +416,17 @@ function BoardSquare({
   isLight,
   isSelected,
   isValidMove,
+  isCaptureMove,
   isCheck,
   theme,
   onClick,
   onHover,
+  onDragStart,
+  onDragEnd,
+  visualOffset,
+  wrapOffset,
+  isRubiksDragOrigin,
+  isRubiksDragLine,
 }: BoardSquareProps) {
   const materialRef = useRef<THREE.MeshLambertMaterial>(null);
   const isRubiks = theme.boardDecor === "rubiks";
@@ -318,11 +434,25 @@ function BoardSquare({
     isRubiks
       ? getRubiksSquareColor(row, col)
       : isLight ? theme.lightSquare : theme.darkSquare;
+  const legalMoveColor = useMemo(() => {
+    const highlightGreen = new THREE.Color(0x05f20e);
+    return highlightGreen.lerp(new THREE.Color(isLight ? 0xffffff : 0x0b3f0d), isLight ? 0.1 : 0.16).getHex();
+  }, [isLight]);
+  const captureMoveColor = useMemo(() => {
+    const captureRed = new THREE.Color(0xff1d18);
+    return captureRed.lerp(new THREE.Color(isLight ? 0xffffff : 0x4a0505), isLight ? 0.08 : 0.14).getHex();
+  }, [isLight]);
   let color = baseColor;
   if (isSelected) color = 0xe8e844;
   else if (isCheck) color = 0xff4444;
 
   const [wx, , wz] = boardToWorld(row, col);
+  const validMoveLift = isValidMove ? 0.035 : 0;
+  const displayPosition: [number, number, number] = [
+    wx + visualOffset[0],
+    visualOffset[1] + validMoveLift,
+    wz + visualOffset[2],
+  ];
   const targetColor = useMemo(() => new THREE.Color(color), [color]);
   const rubiksStickerShape = useMemo(() => createRoundedSquareShape(0.82, 0.09), []);
 
@@ -330,49 +460,25 @@ function BoardSquare({
     materialRef.current?.color.lerp(targetColor, 0.08);
   });
 
+  const validMoveBorder = isValidMove ? (
+    <ValidMoveBorder
+      position={[displayPosition[0], 0.13 + validMoveLift, displayPosition[2]]}
+      color={isCaptureMove ? captureMoveColor : legalMoveColor}
+    />
+  ) : null;
+
   if (isRubiks) {
-    return (
-      <group>
-        <mesh
-          position={[wx, -0.055, wz]}
-          receiveShadow
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            onClick(row, col);
-          }}
-          onPointerEnter={(e) => {
-            e.stopPropagation();
-            onHover(row, col, true);
-          }}
-          onPointerLeave={(e) => {
-            e.stopPropagation();
-            onHover(row, col, false);
-          }}
-        >
+    const rubiksTile = (
+      <>
+        <mesh position={[0, -0.055, 0]} receiveShadow>
           <boxGeometry args={[SQUARE_SIZE, 0.12, SQUARE_SIZE]} />
           <meshLambertMaterial color={0x050505} />
         </mesh>
-        <mesh
-          position={[wx, 0.014, wz]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          receiveShadow
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            onClick(row, col);
-          }}
-          onPointerEnter={(e) => {
-            e.stopPropagation();
-            onHover(row, col, true);
-          }}
-          onPointerLeave={(e) => {
-            e.stopPropagation();
-            onHover(row, col, false);
-          }}
-        >
+        <mesh position={[0, 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <shapeGeometry args={[rubiksStickerShape]} />
           <meshLambertMaterial ref={materialRef} color={baseColor} />
         </mesh>
-        <mesh position={[wx, 0.018, wz]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+        <mesh position={[0, 0.018, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
           <shapeGeometry args={[rubiksStickerShape]} />
           <meshBasicMaterial
             color={isLight ? 0xffffff : 0x000000}
@@ -383,13 +489,60 @@ function BoardSquare({
             polygonOffsetFactor={-3}
           />
         </mesh>
+      </>
+    );
 
-        {isValidMove && (
-          <mesh position={[wx, 0.04, wz]}>
-            <cylinderGeometry args={[0.2, 0.2, 0.04, 14]} />
-            <meshLambertMaterial color={0x44bb44} transparent opacity={0.72} />
+    return (
+      <group>
+        <group
+          position={displayPosition}
+          scale={isRubiksDragOrigin ? [1.04, 1.04, 1.04] : [1, 1, 1]}
+          receiveShadow
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onDragStart(row, col, e.point);
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            onDragEnd(row, col, e.point);
+          }}
+          onPointerEnter={(e) => {
+            e.stopPropagation();
+            onHover(row, col, true);
+          }}
+          onPointerLeave={(e) => {
+            e.stopPropagation();
+            onHover(row, col, false);
+          }}
+        >
+          {rubiksTile}
+        </group>
+        {wrapOffset && (
+          <group
+            position={[
+              wx + visualOffset[0] + wrapOffset[0],
+              visualOffset[1],
+              wz + visualOffset[2] + wrapOffset[2],
+            ]}
+            raycast={() => null}
+          >
+            {rubiksTile}
+          </group>
+        )}
+        {isRubiksDragOrigin && (
+          <mesh position={[displayPosition[0], 0.08, displayPosition[2]]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+            <ringGeometry args={[0.48, 0.57, 28]} />
+            <meshBasicMaterial color={0xffffff} transparent opacity={0.75} depthWrite={false} />
           </mesh>
         )}
+        {isRubiksDragLine && !isRubiksDragOrigin && (
+          <mesh position={[displayPosition[0], 0.064, displayPosition[2]]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+            <ringGeometry args={[0.42, 0.47, 28]} />
+            <meshBasicMaterial color={0xffffff} transparent opacity={0.22} depthWrite={false} />
+          </mesh>
+        )}
+        {validMoveBorder}
+
       </group>
     );
   }
@@ -397,11 +550,15 @@ function BoardSquare({
   return (
     <group>
       <mesh
-        position={[wx, -0.05, wz]}
+        position={displayPosition}
         receiveShadow
         onPointerDown={(e) => {
           e.stopPropagation();
-          onClick(row, col);
+          onDragStart(row, col, e.point);
+        }}
+        onPointerUp={(e) => {
+          e.stopPropagation();
+          onDragEnd(row, col, e.point);
         }}
         onPointerEnter={(e) => {
           e.stopPropagation();
@@ -415,13 +572,52 @@ function BoardSquare({
         <boxGeometry args={[SQUARE_SIZE, 0.1, SQUARE_SIZE]} />
         <meshLambertMaterial ref={materialRef} color={baseColor} />
       </mesh>
+      {validMoveBorder}
+    </group>
+  );
+}
 
-      {isValidMove && (
-        <mesh position={[wx, 0.01, wz]}>
-          <cylinderGeometry args={[0.2, 0.2, 0.04, 14]} />
-          <meshLambertMaterial color={0x44bb44} transparent opacity={0.72} />
+function ValidMoveBorder({
+  position,
+  color,
+}: {
+  position: [number, number, number];
+  color: number;
+}) {
+  const bars = [
+    { key: "front", position: [0, 0, 0.46], length: 0.86, radius: 0.035, rotation: [0, 0, Math.PI / 2] },
+    { key: "back", position: [0, 0, -0.46], length: 0.86, radius: 0.035, rotation: [0, 0, Math.PI / 2] },
+    { key: "left", position: [-0.46, 0, 0], length: 0.86, radius: 0.035, rotation: [Math.PI / 2, 0, 0] },
+    { key: "right", position: [0.46, 0, 0], length: 0.86, radius: 0.035, rotation: [Math.PI / 2, 0, 0] },
+  ] as const;
+
+  const glowBars = [
+    { key: "front-glow", position: [0, -0.004, 0.46], scale: [0.94, 0.006, 0.18] },
+    { key: "back-glow", position: [0, -0.004, -0.46], scale: [0.94, 0.006, 0.18] },
+    { key: "left-glow", position: [-0.46, -0.004, 0], scale: [0.18, 0.006, 0.94] },
+    { key: "right-glow", position: [0.46, -0.004, 0], scale: [0.18, 0.006, 0.94] },
+  ] as const;
+
+  return (
+    <group position={position} raycast={() => null}>
+      {glowBars.map((bar) => (
+        <group key={bar.key} position={bar.position}>
+          <mesh>
+            <boxGeometry args={bar.scale} />
+            <meshBasicMaterial color={color} transparent opacity={0.14} depthWrite={false} />
+          </mesh>
+          <mesh position={[0, -0.001, 0]}>
+            <boxGeometry args={[bar.scale[0] * 1.35, bar.scale[1] * 0.7, bar.scale[2] * 1.65]} />
+            <meshBasicMaterial color={color} transparent opacity={0.045} depthWrite={false} />
+          </mesh>
+        </group>
+      ))}
+      {bars.map((bar) => (
+        <mesh key={bar.key} position={bar.position} rotation={bar.rotation}>
+          <capsuleGeometry args={[bar.radius, bar.length, 5, 12]} />
+          <meshBasicMaterial color={color} transparent opacity={0.95} depthWrite={false} />
         </mesh>
-      )}
+      ))}
     </group>
   );
 }
@@ -550,9 +746,6 @@ function BoardThemeDecor({ theme }: { theme: BoardThemeConfig }) {
 }
 
 function RubiksDecor() {
-  const stickerColors = [0xffffff, 0xffdf34, 0xff8b22, 0xef3434, 0x22b95a, 0x2f79ff];
-  const stickerPositions = [-3.35, -2.05, -0.75, 0.75, 2.05, 3.35];
-
   return (
     <group>
       <mesh position={[0, 0.018, 4.46]} raycast={() => null}>
@@ -571,18 +764,6 @@ function RubiksDecor() {
         <boxGeometry args={[0.18, 0.04, 8.6]} />
         <meshBasicMaterial color={0x050505} transparent opacity={0.88} depthWrite={false} />
       </mesh>
-      {stickerPositions.map((x, index) => (
-        <mesh key={`rubiks-front-${index}`} position={[x, 0.05, 4.47]} raycast={() => null}>
-          <boxGeometry args={[0.45, 0.035, 0.12]} />
-          <meshBasicMaterial color={stickerColors[index]} transparent opacity={0.85} depthWrite={false} />
-        </mesh>
-      ))}
-      {stickerPositions.map((z, index) => (
-        <mesh key={`rubiks-side-${index}`} position={[4.47, 0.05, z]} raycast={() => null}>
-          <boxGeometry args={[0.12, 0.035, 0.45]} />
-          <meshBasicMaterial color={stickerColors[(index + 3) % stickerColors.length]} transparent opacity={0.85} depthWrite={false} />
-        </mesh>
-      ))}
     </group>
   );
 }
@@ -879,9 +1060,101 @@ function BattlefieldDecor() {
 interface SceneProps {
   gameState: GameState;
   onSquareClick: (row: number, col: number) => void;
+  onRubiksShift?: (shift: RubiksShift) => void;
+  onRubiksDragActiveChange?: (active: boolean) => void;
+  onRubiksCheckBlocked?: () => void;
   snakesAndLadders: SnakeLadder[];
   mines: Mine[];
   theme: BoardThemeConfig;
+}
+
+interface RubiksDragState {
+  start: Square;
+  axis: RubiksShift["axis"] | null;
+  amount: number;
+}
+
+function getRubiksShiftFromDrag(drag: RubiksDragState | null): RubiksShift | null {
+  if (!drag) return null;
+  if (!drag.axis || drag.amount === 0) return null;
+
+  return drag.axis === "row"
+    ? { axis: "row", index: drag.start.row, amount: drag.amount }
+    : { axis: "col", index: drag.start.col, amount: drag.amount };
+}
+
+function getRubiksPreviewOffsets(
+  row: number,
+  col: number,
+  shift: RubiksShift | null,
+): {
+  visualOffset: [number, number, number];
+  wrapOffset: [number, number, number] | null;
+  isLine: boolean;
+} {
+  if (!shift) {
+    return { visualOffset: [0, 0, 0], wrapOffset: null, isLine: false };
+  }
+
+  if (shift.axis === "row" && row === shift.index) {
+    const xOffset = shift.amount * SQUARE_SIZE;
+    let wrapX = 0;
+    if (col + shift.amount > 7) wrapX = -8 * SQUARE_SIZE;
+    if (col + shift.amount < 0) wrapX = 8 * SQUARE_SIZE;
+
+    return {
+      visualOffset: [xOffset, 0.05, 0],
+      wrapOffset: wrapX ? [wrapX, 0, 0] : null,
+      isLine: true,
+    };
+  }
+
+  if (shift.axis === "col" && col === shift.index) {
+    const zOffset = -shift.amount * SQUARE_SIZE;
+    let wrapZ = 0;
+    if (row + shift.amount > 7) wrapZ = 8 * SQUARE_SIZE;
+    if (row + shift.amount < 0) wrapZ = -8 * SQUARE_SIZE;
+
+    return {
+      visualOffset: [0, 0.05, zOffset],
+      wrapOffset: wrapZ ? [0, 0, wrapZ] : null,
+      isLine: true,
+    };
+  }
+
+  return { visualOffset: [0, 0, 0], wrapOffset: null, isLine: false };
+}
+
+function RubiksDragIndicator({ shift }: { shift: RubiksShift | null }) {
+  if (!shift) return null;
+
+  const amountLabel = `${shift.amount > 0 ? "+" : ""}${shift.amount}`;
+  const label =
+    shift.axis === "row"
+      ? `Rank ${shift.index + 1} ${amountLabel}`
+      : `File ${COL_LETTERS[shift.index]} ${amountLabel}`;
+  const arrowRotation = shift.axis === "row"
+    ? [0, 0, shift.amount >= 0 ? -Math.PI / 2 : Math.PI / 2]
+    : [0, 0, shift.amount >= 0 ? Math.PI : 0];
+
+  return (
+    <group position={[0, 0.35, 0]} raycast={() => null}>
+      <Text
+        position={[0, 0.1, -5.05]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={0.28}
+        color="#f8f3df"
+        anchorX="center"
+        anchorY="middle"
+      >
+        {label}
+      </Text>
+      <mesh position={[0, 0.04, -4.52]} rotation={arrowRotation as [number, number, number]}>
+        <coneGeometry args={[0.14, 0.34, 3]} />
+        <meshBasicMaterial color={0xf8f3df} transparent opacity={0.82} />
+      </mesh>
+    </group>
+  );
 }
 
 function CinematicCamera({
@@ -895,6 +1168,7 @@ function CinematicCamera({
 }) {
   const { camera } = useThree();
   const startTime = useRef(0);
+  const introDuration = 9.5;
 
   useEffect(() => {
     startTime.current = 0;
@@ -904,7 +1178,11 @@ function CinematicCamera({
     if (mode !== "intro" && mode !== "intro-hold") return;
 
     if (mode === "intro-hold") {
-      const angle = Math.PI * 1.45;
+      const endAngle = Math.atan2(
+        theme.camera.playPosition[0],
+        theme.camera.playPosition[2],
+      );
+      const angle = endAngle + Math.PI * 0.78;
       camera.position.set(
         Math.sin(angle) * theme.camera.introStartRadius,
         theme.camera.introStartHeight + BOARD_ELEVATION,
@@ -919,15 +1197,20 @@ function CinematicCamera({
     }
 
     const elapsed = clock.getElapsedTime() - startTime.current;
-    const t = Math.min(Math.max(elapsed / 8, 0), 1);
-    const eased = 1 - Math.pow(1 - t, 3);
-    const angle = Math.PI * 1.45 - eased * Math.PI * 0.72;
+    const t = Math.min(Math.max(elapsed / introDuration, 0), 1);
+    const eased = t < 0.5
+      ? 4 * t * t * t
+      : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const playPosition = theme.camera.playPosition;
+    const endRadius = Math.hypot(playPosition[0], playPosition[2]);
+    const endAngle = Math.atan2(playPosition[0], playPosition[2]);
+    const angle = endAngle + (1 - eased) * Math.PI * 0.78;
     const radius =
       theme.camera.introStartRadius -
-      eased * (theme.camera.introStartRadius - theme.camera.introEndRadius);
+      eased * (theme.camera.introStartRadius - endRadius);
     const height =
       theme.camera.introStartHeight -
-      eased * (theme.camera.introStartHeight - theme.camera.introEndHeight);
+      eased * (theme.camera.introStartHeight - (playPosition[1] - BOARD_ELEVATION));
 
     camera.position.set(
       Math.sin(angle) * radius,
@@ -1025,31 +1308,111 @@ function MineClues({ gameState, mines }: { gameState: GameState; mines: Mine[] }
           const clueColor =
             nearbyCount === 0
               ? "#8fb7c8"
-              : nearbyCount <= 2
+                : nearbyCount <= 2
                 ? "#f6d77a"
                 : "#ef8f62";
 
           return (
-            <group key={`mine-clue-${piece.id}`} position={[wx + 0.32, 0.09, wz + 0.32]}>
-              <mesh rotation={[-Math.PI / 2, 0, 0]}>
-                <circleGeometry args={[0.18, 20]} />
-                <meshBasicMaterial color={0x050505} transparent opacity={0.68} depthWrite={false} />
-              </mesh>
-              <Text
-                position={[0, 0.015, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                fontSize={0.26}
-                color={clueColor}
-                anchorX="center"
-                anchorY="middle"
-                font={undefined}
-              >
-                {String(nearbyCount)}
-              </Text>
+            <group key={`mine-clue-${piece.id}`}>
+              <MineScanner position={[wx, 0.075, wz]} count={nearbyCount} />
+              <group position={[wx + 0.32, 0.11, wz + 0.32]}>
+                <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                  <circleGeometry args={[0.18, 20]} />
+                  <meshBasicMaterial color={0x050505} transparent opacity={0.68} depthWrite={false} />
+                </mesh>
+                <Text
+                  position={[0, 0.015, 0]}
+                  rotation={[-Math.PI / 2, 0, 0]}
+                  fontSize={0.26}
+                  color={clueColor}
+                  anchorX="center"
+                  anchorY="middle"
+                  font={undefined}
+                >
+                  {String(nearbyCount)}
+                </Text>
+              </group>
             </group>
           );
         })}
     </>
+  );
+}
+
+function MineScanner({
+  position,
+  count,
+}: {
+  position: [number, number, number];
+  count: number;
+}) {
+  const sweepRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const glowColor = count === 0 ? 0x6db6ff : count <= 2 ? 0xffd86c : 0xff6d35;
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    const pulse = (Math.sin(t * 2.4) + 1) / 2;
+
+    if (sweepRef.current) {
+      sweepRef.current.rotation.z = -t * 1.15;
+    }
+    if (ringRef.current) {
+      ringRef.current.scale.setScalar(1 + pulse * 0.08);
+      const mat = ringRef.current.material;
+      if (mat instanceof THREE.MeshBasicMaterial) {
+        mat.opacity = 0.26 + pulse * 0.14;
+      }
+    }
+    if (glowRef.current) {
+      glowRef.current.scale.setScalar(1 + pulse * 0.16);
+      const mat = glowRef.current.material;
+      if (mat instanceof THREE.MeshBasicMaterial) {
+        mat.opacity = 0.07 + pulse * 0.05;
+      }
+    }
+  });
+
+  return (
+    <group position={position} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+      <mesh ref={glowRef}>
+        <circleGeometry args={[0.42, 32]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.08}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh ref={ringRef}>
+        <ringGeometry args={[0.32, 0.36, 36]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.3}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh ref={sweepRef} position={[0, 0, 0.003]}>
+        <circleGeometry args={[0.34, 32, 0, Math.PI * 0.42]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.18}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((angle) => (
+        <mesh key={angle} position={[Math.cos(angle) * 0.34, Math.sin(angle) * 0.34, 0.006]} rotation={[0, 0, angle]}>
+          <boxGeometry args={[0.1, 0.012, 0.002]} />
+          <meshBasicMaterial color={glowColor} transparent opacity={0.28} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -1349,8 +1712,599 @@ function PawnSpeedBurst({
   );
 }
 
-function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: SceneProps) {
+function CapturedPiecePlaceholder({
+  move,
+  theme,
+}: {
+  move: Move | null;
+  theme: BoardThemeConfig;
+}) {
+  if (!move || !getAnimationCapturedPiece(move)) return null;
+
+  if (theme.id === "death-board") {
+    return <KnockOffCaptureAnimation move={move} />;
+  }
+
+  if (theme.id === "minesweeper-board") {
+    return <RocketCaptureAnimation move={move} />;
+  }
+
+  return (
+    <DissolveCaptureAnimation
+      move={move}
+      showSerpents={theme.id === "serpents-board"}
+    />
+  );
+}
+
+function DissolveCaptureAnimation({
+  move,
+  showSerpents = false,
+}: {
+  move: Move;
+  showSerpents?: boolean;
+}) {
+  const startedAt = useRef<number | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    startedAt.current = null;
+    setProgress(0);
+  }, [move]);
+
+  useFrame(({ clock }) => {
+    if (startedAt.current === null) startedAt.current = clock.getElapsedTime();
+    const elapsed = clock.getElapsedTime() - startedAt.current;
+    setProgress(Math.min(elapsed / (showSerpents ? 0.58 : 0.9), 1));
+  });
+
+  if (progress >= 1) return null;
+
+  const captureSquare = getCapturedPieceSquare(move);
+  const capturedPiece = getAnimationCapturedPiece(move);
+  if (!capturedPiece) return null;
+  const [wx, wy, wz] = boardToWorld(captureSquare.row, captureSquare.col);
+  const fade = 1 - progress;
+  const serpentYank = showSerpents
+    ? easeInCubic(clamp01((progress - 0.34) / 0.48))
+    : progress;
+  const sink = showSerpents ? serpentYank * 0.9 : progress * 0.38;
+  const wobble = showSerpents
+    ? Math.sin(progress * Math.PI * 4) * 0.08 + serpentYank * 0.28
+    : Math.sin(progress * Math.PI) * 0.18;
+  const scatter = getCaptureScatter(capturedPiece);
+
+  return (
+    <group position={[wx, wy, wz]} raycast={() => null}>
+      {showSerpents && <SerpentCaptureTendrils progress={progress} />}
+      <group
+        position={[0, -sink, 0]}
+        rotation={[wobble * 0.45, progress * 0.9, -wobble * 0.75]}
+        scale={[
+          1 - serpentYank * 0.32,
+          1 - serpentYank * 0.58,
+          1 - serpentYank * 0.32,
+        ]}
+      >
+        <ChessPiece
+          type={capturedPiece.type}
+          color={capturedPiece.color}
+          position={[0, 0, 0]}
+          isSelected={false}
+          isHovered={false}
+        />
+      </group>
+      {scatter.map((speck) => (
+        <mesh
+          key={speck.id}
+          position={[
+            speck.x * progress,
+            0.18 + speck.y * Math.sin(progress * Math.PI) - sink * 0.35,
+            speck.z * progress,
+          ]}
+          scale={[
+            speck.size * (0.65 + fade * 0.9),
+            speck.size * (0.65 + fade * 0.9),
+            speck.size * (0.65 + fade * 0.9),
+          ]}
+        >
+          <sphereGeometry args={[1, 6, 4]} />
+          <meshBasicMaterial
+            color={capturedPiece.color === "white" ? 0xf4ead8 : 0x3b3630}
+            transparent
+            opacity={0.5 * fade}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.16 + progress * 0.18, 0.2 + progress * 0.32, 28]} />
+        <meshBasicMaterial
+          color={capturedPiece.color === "white" ? 0xd8c4a6 : 0x171410}
+          transparent
+          opacity={0.22 * fade}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function KnockOffCaptureAnimation({ move }: { move: Move }) {
+  const startedAt = useRef<number | null>(null);
+  const [progress, setProgress] = useState(0);
+  const contactDelay = 0.52;
+
+  useEffect(() => {
+    startedAt.current = null;
+    setProgress(0);
+  }, [move]);
+
+  useFrame(({ clock }) => {
+    if (startedAt.current === null) startedAt.current = clock.getElapsedTime();
+    const elapsed = Math.max(0, clock.getElapsedTime() - startedAt.current - contactDelay);
+    setProgress(Math.min(elapsed / 1.18, 1));
+  });
+
+  const capturedPiece = getAnimationCapturedPiece(move);
+  if (!capturedPiece || progress >= 1) return null;
+
+  const captureSquare = getCapturedPieceSquare(move);
+  const [wx, wy, wz] = boardToWorld(captureSquare.row, captureSquare.col);
+  const from = new THREE.Vector3(wx, wy, wz);
+  const edgeDirection = new THREE.Vector3(wx, 0, wz);
+  if (edgeDirection.lengthSq() < 0.01) {
+    edgeDirection.set(move.to.col >= 4 ? 1 : -1, 0, move.to.row >= 4 ? -0.35 : 0.35);
+  }
+  edgeDirection.normalize();
+
+  const horizontalEase = easeOutCubic(Math.min(progress / 0.68, 1));
+  const fallT = Math.max(0, (progress - 0.42) / 0.58);
+  const borderTarget = 5.05;
+  const edgeComponent = Math.max(Math.abs(edgeDirection.x), Math.abs(edgeDirection.z), 0.2);
+  const distanceToEdge = (borderTarget - Math.max(Math.abs(wx), Math.abs(wz))) / edgeComponent;
+  const travelDistance = Math.max(2.9, distanceToEdge + 0.72);
+  const position = from.clone().add(edgeDirection.clone().multiplyScalar(horizontalEase * travelDistance));
+  position.y += Math.sin(Math.min(progress / 0.56, 1) * Math.PI) * 0.16 - fallT * fallT * 2.4;
+  const fade = Math.max(0, 1 - fallT * 1.35);
+
+  return (
+    <group
+      position={position.toArray()}
+      rotation={[fallT * 1.2, horizontalEase * 1.5, -horizontalEase * 1.35]}
+      scale={[1 - fallT * 0.2, 1 - fallT * 0.28, 1 - fallT * 0.2]}
+      raycast={() => null}
+    >
+      <ChessPiece
+        type={capturedPiece.type}
+        color={capturedPiece.color}
+        position={[0, 0, 0]}
+        isSelected={false}
+        isHovered={false}
+      />
+      <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.36 + progress * 0.12, 24]} />
+        <meshBasicMaterial
+          color={0x11100e}
+          transparent
+          opacity={0.16 * fade}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function RocketCaptureAnimation({ move }: { move: Move }) {
+  const startedAt = useRef<number | null>(null);
+  const [progress, setProgress] = useState(0);
+  const contactDelay = 0.48;
+
+  useEffect(() => {
+    startedAt.current = null;
+    setProgress(0);
+  }, [move]);
+
+  useFrame(({ clock }) => {
+    if (startedAt.current === null) startedAt.current = clock.getElapsedTime();
+    const elapsed = Math.max(0, clock.getElapsedTime() - startedAt.current - contactDelay);
+    setProgress(Math.min(elapsed / 1.28, 1));
+  });
+
+  const capturedPiece = getAnimationCapturedPiece(move);
+  if (!capturedPiece || progress >= 1) return null;
+
+  const captureSquare = getCapturedPieceSquare(move);
+  const [wx, wy, wz] = boardToWorld(captureSquare.row, captureSquare.col);
+  const [fromX, , fromZ] = boardToWorld(move.from.row, move.from.col);
+  const bumpDirection = new THREE.Vector3(wx - fromX, 0, wz - fromZ);
+  if (bumpDirection.lengthSq() < 0.01) bumpDirection.set(wx || 1, 0, wz || -1);
+  bumpDirection.normalize();
+  const launchT = Math.min(progress / 0.68, 1);
+  const explosionT = Math.max(0, (progress - 0.58) / 0.42);
+  const height = easeInCubic(launchT) * 4.4;
+  const shoveT = easeOutCubic(Math.min(progress / 0.32, 1));
+  const driftX = bumpDirection.x * shoveT * 0.86 + Math.sin(progress * Math.PI * 1.1) * 0.18;
+  const driftZ = bumpDirection.z * shoveT * 0.86 - progress * 0.18;
+  const fade = Math.max(0, 1 - explosionT);
+  const blastScale = 0.18 + explosionT * 1.35;
+  const showPiece = explosionT < 0.32;
+
+  return (
+    <group position={[wx + driftX, wy + height, wz + driftZ]} raycast={() => null}>
+      {showPiece && (
+        <group rotation={[launchT * -0.24, launchT * 0.42, launchT * 0.18]}>
+          <ChessPiece
+            type={capturedPiece.type}
+            color={capturedPiece.color}
+            position={[0, 0, 0]}
+            isSelected={false}
+            isHovered={false}
+          />
+          {progress > 0.02 && <RocketFlames progress={launchT} />}
+        </group>
+      )}
+      {explosionT > 0 && (
+        <group>
+          <pointLight
+            position={[0, 0.2, 0]}
+            color={0xff9a33}
+            intensity={7 * fade}
+            distance={4}
+            decay={2}
+          />
+          <mesh scale={[blastScale * 0.42, blastScale * 0.42, blastScale * 0.42]}>
+            <sphereGeometry args={[0.42, 14, 8]} />
+            <meshBasicMaterial color={0xfff2c7} transparent opacity={0.9 * fade} depthWrite={false} />
+          </mesh>
+          <mesh scale={[blastScale, blastScale * 0.5, blastScale]}>
+            <sphereGeometry args={[0.42, 14, 8]} />
+            <meshBasicMaterial color={0xff8a1f} transparent opacity={0.68 * fade} depthWrite={false} />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} scale={[explosionT * 2.2, explosionT * 2.2, 1]}>
+            <ringGeometry args={[0.18, 0.25, 30]} />
+            <meshBasicMaterial color={0xfff0bd} transparent opacity={0.84 * fade} depthWrite={false} />
+          </mesh>
+          {getRocketSparks(capturedPiece).map((spark) => (
+            <mesh
+              key={spark.id}
+              position={[
+                spark.x * explosionT,
+                spark.y * Math.sin(explosionT * Math.PI) + spark.lift * explosionT,
+                spark.z * explosionT,
+              ]}
+              scale={[spark.size, spark.size, spark.size]}
+            >
+              <sphereGeometry args={[1, 6, 4]} />
+              <meshBasicMaterial color={spark.color} transparent opacity={0.88 * fade} depthWrite={false} />
+            </mesh>
+          ))}
+        </group>
+      )}
+    </group>
+  );
+}
+
+function RocketFlames({ progress }: { progress: number }) {
+  const flame = 0.75 + Math.sin(progress * Math.PI * 8) * 0.18;
+
+  return (
+    <group position={[0, -0.11, 0]}>
+      <pointLight position={[0, -0.18, 0]} color={0xff7926} intensity={2.2 * flame} distance={2.4} />
+      <mesh position={[0, -0.2, 0]} rotation={[Math.PI, 0, 0]} scale={[0.24, 0.54 * flame, 0.24]}>
+        <coneGeometry args={[0.24, 0.7, 12]} />
+        <meshBasicMaterial color={0xff7626} transparent opacity={0.68} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, -0.26, 0]} rotation={[Math.PI, 0, 0]} scale={[0.14, 0.44 * flame, 0.14]}>
+        <coneGeometry args={[0.18, 0.58, 12]} />
+        <meshBasicMaterial color={0xfff0ad} transparent opacity={0.86} depthWrite={false} />
+      </mesh>
+      {[0, 1, 2, 3, 4, 5].map((index) => {
+        const angle = (index / 6) * Math.PI * 2;
+        const radius = 0.08 + (index % 3) * 0.028;
+
+        return (
+          <mesh
+            key={index}
+            position={[
+              Math.cos(angle) * radius * progress,
+              -0.36 - progress * (0.16 + index * 0.015),
+              Math.sin(angle) * radius * progress,
+            ]}
+            scale={[0.055 + progress * 0.05, 0.03, 0.055 + progress * 0.05]}
+            rotation={[-Math.PI / 2, 0, angle]}
+          >
+            <circleGeometry args={[1, 10]} />
+            <meshBasicMaterial color={0x27231f} transparent opacity={0.24 * (1 - progress * 0.25)} depthWrite={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function SerpentCaptureTendrils({ progress }: { progress: number }) {
+  const snakes = [
+    { angle: 0.15, radius: 0.19, phase: 0.2, scale: 1.0 },
+    { angle: 2.25, radius: 0.18, phase: 1.45, scale: 0.94 },
+    { angle: 4.25, radius: 0.205, phase: 2.7, scale: 1.04 },
+  ];
+
+  return (
+    <group>
+      <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.22, 0.64, 36]} />
+        <meshBasicMaterial color={0x071607} transparent opacity={0.2 * (1 - progress * 0.45)} depthWrite={false} />
+      </mesh>
+      {snakes.map((snake, index) => (
+        <CaptureSnake
+          key={index}
+          progress={progress}
+          angle={snake.angle}
+          radius={snake.radius}
+          phase={snake.phase}
+          scale={snake.scale}
+        />
+      ))}
+    </group>
+  );
+}
+
+function CaptureSnake({
+  progress,
+  angle,
+  radius,
+  phase,
+  scale,
+}: {
+  progress: number;
+  angle: number;
+  radius: number;
+  phase: number;
+  scale: number;
+}) {
+  const emerge = easeOutCubic(clamp01(progress / 0.3));
+  const coil = easeOutCubic(clamp01(progress / 0.58));
+  const yank = easeInCubic(clamp01((progress - 0.34) / 0.48));
+  const vanish = clamp01((progress - 0.78) / 0.18);
+  const opacity = Math.max(0, 0.94 * emerge * (1 - vanish * 0.75));
+  const slither = Math.sin(progress * 10 + phase) * 0.035;
+  const visibleLength = 0.24 + coil * 0.76;
+  const turns = 0.58;
+  const yBase = 0.02 - yank * 0.42;
+  const maxHeight = 0.36;
+  const points = Array.from({ length: 9 }, (_, index) => {
+    const t = (index / 8) * visibleLength;
+    const rise = Math.pow(t, 0.78) * maxHeight * emerge;
+    const curlAngle = angle + phase * 0.12 + t * Math.PI * 2 * turns + slither;
+    const breathingRadius = radius + Math.sin(t * Math.PI * 4.2 + progress * 5 + phase) * 0.02;
+    const pullIn = 1 - yank * (0.36 + t * 0.32);
+    return new THREE.Vector3(
+      Math.cos(curlAngle) * breathingRadius * pullIn,
+      yBase + rise - yank * t * 0.32,
+      Math.sin(curlAngle) * breathingRadius * pullIn,
+    );
+  });
+  const curve = new THREE.CatmullRomCurve3(points);
+  const tail = points[0];
+  const head = points[points.length - 1];
+  const headDir = curve.getTangent(1).normalize();
+  const headYaw = angleForVector(headDir);
+  const forward = new THREE.Vector3(headDir.x, 0, headDir.z).normalize();
+  const side = new THREE.Vector3(-forward.z, 0, forward.x).normalize();
+  const scaleMarks = Array.from({ length: 11 }, (_, index) => {
+    const t = 0.1 + index * 0.075;
+    const point = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+    const offset = normal.multiplyScalar(index % 2 === 0 ? 0.018 : -0.018);
+    return {
+      position: [point.x + offset.x, point.y + 0.038, point.z + offset.z] as [number, number, number],
+      rotation: [0, angleForVector(tangent), 0] as [number, number, number],
+    };
+  });
+
+  return (
+    <group scale={[scale, scale, scale]}>
+      <mesh>
+        <tubeGeometry args={[curve, 72, 0.022, 9, false]} />
+        <meshLambertMaterial color={0x2dc52d} transparent opacity={opacity} />
+      </mesh>
+      {scaleMarks.map((mark, index) => (
+        <mesh key={index} position={mark.position} rotation={mark.rotation} scale={[0.62, 0.14, 1]}>
+          <sphereGeometry args={[0.013, 7, 4]} />
+          <meshLambertMaterial color={index % 2 === 0 ? 0x1c8f22 : 0x7bd145} transparent opacity={opacity * 0.85} />
+        </mesh>
+      ))}
+      <group position={head.toArray()} rotation={[0, headYaw, 0]}>
+        <mesh scale={[1.12, 0.72, 1.48]}>
+          <sphereGeometry args={[0.044, 12, 7]} />
+          <meshLambertMaterial color={0x0f7a0f} transparent opacity={opacity} />
+        </mesh>
+        <mesh position={[0, -0.006, 0.062]} scale={[0.8, 0.48, 1.05]}>
+          <sphereGeometry args={[0.03, 10, 6]} />
+          <meshLambertMaterial color={0x2ab52e} transparent opacity={opacity} />
+        </mesh>
+        <mesh position={[-0.024, 0.026, 0.052]} rotation={[0.16, 0, 0.1]}>
+          <coneGeometry args={[0.008, 0.028, 7]} />
+          <meshLambertMaterial color={0x1e7f20} transparent opacity={opacity} />
+        </mesh>
+        <mesh position={[0.024, 0.026, 0.052]} rotation={[0.16, 0, -0.1]}>
+          <coneGeometry args={[0.008, 0.028, 7]} />
+          <meshLambertMaterial color={0x1e7f20} transparent opacity={opacity} />
+        </mesh>
+      </group>
+      {[-1, 1].map((sign) => {
+        const eye = head.clone().add(side.clone().multiplyScalar(sign * 0.034)).add(new THREE.Vector3(0, 0.035, 0));
+        return (
+          <group key={sign}>
+            <mesh position={eye.toArray()}>
+              <sphereGeometry args={[0.011, 7, 5]} />
+              <meshLambertMaterial color={0xffffff} transparent opacity={opacity} />
+            </mesh>
+            <mesh position={[eye.x + forward.x * 0.008, eye.y + 0.004, eye.z + forward.z * 0.008]}>
+              <sphereGeometry args={[0.006, 5, 4]} />
+              <meshLambertMaterial color={0x111111} transparent opacity={opacity} />
+            </mesh>
+          </group>
+        );
+      })}
+      <MiniSnakeTongue origin={head} forward={forward} side={side} opacity={opacity * (0.45 + coil * 0.55)} />
+      <mesh position={tail.toArray()} rotation={[Math.PI / 2, angleForVector(headDir), 0]}>
+        <coneGeometry args={[0.022, 0.08, 8]} />
+        <meshLambertMaterial color={0x87c94a} transparent opacity={opacity} />
+      </mesh>
+    </group>
+  );
+}
+
+function MiniSnakeTongue({
+  origin,
+  forward,
+  side,
+  opacity,
+}: {
+  origin: THREE.Vector3;
+  forward: THREE.Vector3;
+  side: THREE.Vector3;
+  opacity: number;
+}) {
+  const base = origin.clone().add(forward.clone().multiplyScalar(0.052)).add(new THREE.Vector3(0, 0.006, 0));
+  const tip = origin.clone().add(forward.clone().multiplyScalar(0.135));
+  const forkA = tip.clone().add(side.clone().multiplyScalar(0.026));
+  const forkB = tip.clone().add(side.clone().multiplyScalar(-0.026));
+
+  return (
+    <group>
+      <MiniCylinderBetween start={base} end={tip} radius={0.0055} color={0xcc2222} opacity={opacity} />
+      <MiniCylinderBetween start={tip} end={forkA} radius={0.0045} color={0xcc2222} opacity={opacity} />
+      <MiniCylinderBetween start={tip} end={forkB} radius={0.0045} color={0xcc2222} opacity={opacity} />
+    </group>
+  );
+}
+
+function MiniCylinderBetween({
+  start,
+  end,
+  radius,
+  color,
+  opacity,
+}: {
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  radius: number;
+  color: number;
+  opacity: number;
+}) {
+  const midpoint = start.clone().lerp(end, 0.5);
+  const direction = end.clone().sub(start);
+  const length = direction.length();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.clone().normalize(),
+  );
+
+  return (
+    <mesh position={midpoint.toArray()} quaternion={quaternion}>
+      <cylinderGeometry args={[radius, radius, length, 6]} />
+      <meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function getCapturedPieceSquare(move: Move): Square {
+  if (move.teleportCapturedPiece && move.teleportedTo) {
+    return move.teleportedTo;
+  }
+
+  if (move.isEnPassant) {
+    return { row: move.from.row, col: move.to.col };
+  }
+
+  return move.to;
+}
+
+function getAnimationCapturedPiece(move: Move): Piece | undefined {
+  return move.teleportCapturedPiece ?? move.capturedPiece;
+}
+
+function getCaptureScatter(piece: Piece) {
+  const seedBase = piece.id.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+  let seed = seedBase || 11;
+
+  return Array.from({ length: 12 }, (_, index) => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    const angle = ((seed % 1000) / 1000) * Math.PI * 2;
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    const radius = 0.14 + ((seed % 1000) / 1000) * 0.32;
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    const lift = 0.12 + ((seed % 1000) / 1000) * 0.28;
+
+    return {
+      id: index,
+      x: Math.cos(angle) * radius,
+      z: Math.sin(angle) * radius,
+      y: lift,
+      size: 0.025 + (index % 3) * 0.01,
+    };
+  });
+}
+
+function getRocketSparks(piece: Piece) {
+  const seedBase = piece.id.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+  let seed = seedBase + 417;
+
+  return Array.from({ length: 20 }, (_, index) => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    const angle = ((seed % 1000) / 1000) * Math.PI * 2;
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    const speed = 0.42 + ((seed % 1000) / 1000) * 0.74;
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    const lift = 0.08 + ((seed % 1000) / 1000) * 0.38;
+
+    return {
+      id: index,
+      x: Math.cos(angle) * speed,
+      z: Math.sin(angle) * speed,
+      y: 0.08 + (index % 5) * 0.03,
+      lift,
+      size: 0.035 + (index % 4) * 0.012,
+      color: index % 4 === 0 ? 0xffffff : index % 4 === 1 ? 0xffd76a : index % 4 === 2 ? 0xff5a1f : 0x302822,
+    };
+  });
+}
+
+function angleForVector(vector: THREE.Vector3) {
+  return Math.atan2(vector.x, vector.z);
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function easeInCubic(t: number) {
+  return t * t * t;
+}
+
+function Scene({
+  gameState,
+  onSquareClick,
+  onRubiksShift,
+  onRubiksDragActiveChange,
+  onRubiksCheckBlocked,
+  snakesAndLadders,
+  mines,
+  theme,
+}: SceneProps) {
   const [hoveredSquare, setHoveredSquare] = useState<Square | null>(null);
+  const [rubiksDrag, setRubiksDrag] = useState<RubiksDragState | null>(null);
+  const rubiksDragStart = useRef<{ square: Square; worldX: number; worldZ: number } | null>(null);
+  const rubiksCheckHold = useRef<{ square: Square; timer: number; warned: boolean } | null>(null);
+  const rubiksPreviewShift = getRubiksShiftFromDrag(rubiksDrag);
 
   const handleHover = useCallback(
     (row: number, col: number, on: boolean) => {
@@ -1358,6 +2312,108 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
     },
     [],
   );
+
+  const handleSquarePointerDown = useCallback(
+    (row: number, col: number, point: THREE.Vector3) => {
+      if (theme.boardDecor !== "rubiks" || !onRubiksShift) {
+        onSquareClick(row, col);
+        return;
+      }
+      if (gameState.status === "check") {
+        if (rubiksCheckHold.current) {
+          window.clearTimeout(rubiksCheckHold.current.timer);
+        }
+        const holdState = { square: { row, col }, timer: 0, warned: false };
+        holdState.timer = window.setTimeout(() => {
+          holdState.warned = true;
+          onRubiksCheckBlocked?.();
+        }, 320);
+        rubiksCheckHold.current = holdState;
+        return;
+      }
+      rubiksDragStart.current = { square: { row, col }, worldX: point.x, worldZ: point.z };
+      setRubiksDrag({ start: { row, col }, axis: null, amount: 0 });
+      onRubiksDragActiveChange?.(true);
+    },
+    [gameState.status, onRubiksCheckBlocked, onRubiksDragActiveChange, onRubiksShift, onSquareClick, theme.boardDecor],
+  );
+
+  const updateRubiksDragPreview = useCallback((point: THREE.Vector3) => {
+    const start = rubiksDragStart.current;
+    if (!start) return;
+
+    const dx = point.x - start.worldX;
+    const dz = point.z - start.worldZ;
+    const axis: RubiksShift["axis"] = Math.abs(dx) >= Math.abs(dz) ? "row" : "col";
+    const rawAmount = axis === "row" ? dx / SQUARE_SIZE : -dz / SQUARE_SIZE;
+    const amount = Math.max(-7, Math.min(7, Math.round(rawAmount)));
+
+    setRubiksDrag({ start: start.square, axis, amount });
+  }, []);
+
+  const handleSquarePointerUp = useCallback(
+    (row: number, col: number, point: THREE.Vector3) => {
+      if (theme.boardDecor !== "rubiks" || !onRubiksShift) return;
+
+      const blockedHold = rubiksCheckHold.current;
+      if (blockedHold) {
+        window.clearTimeout(blockedHold.timer);
+        rubiksCheckHold.current = null;
+        if (!blockedHold.warned) {
+          onSquareClick(row, col);
+        }
+        return;
+      }
+
+      const start = rubiksDragStart.current;
+      updateRubiksDragPreview(point);
+      const drag = rubiksDrag;
+      rubiksDragStart.current = null;
+      setRubiksDrag(null);
+      onRubiksDragActiveChange?.(false);
+      if (!start) return;
+
+      const dx = point.x - start.worldX;
+      const dz = point.z - start.worldZ;
+      const axis: RubiksShift["axis"] = drag?.axis ?? (Math.abs(dx) >= Math.abs(dz) ? "row" : "col");
+      const rawAmount = axis === "row" ? dx / SQUARE_SIZE : -dz / SQUARE_SIZE;
+      const amount = Math.max(-7, Math.min(7, Math.round(rawAmount)));
+
+      if (amount === 0) {
+        onSquareClick(start.square.row, start.square.col);
+        return;
+      }
+
+      if (axis === "row") {
+        onRubiksShift({ axis: "row", index: start.square.row, amount });
+      } else {
+        onRubiksShift({ axis: "col", index: start.square.col, amount });
+      }
+    },
+    [onRubiksDragActiveChange, onRubiksShift, onSquareClick, rubiksDrag, theme.boardDecor, updateRubiksDragPreview],
+  );
+
+  const cancelRubiksDrag = useCallback(() => {
+    if (rubiksCheckHold.current) {
+      window.clearTimeout(rubiksCheckHold.current.timer);
+      rubiksCheckHold.current = null;
+    }
+    if (!rubiksDragStart.current) return;
+    rubiksDragStart.current = null;
+    setRubiksDrag(null);
+    onRubiksDragActiveChange?.(false);
+  }, [onRubiksDragActiveChange]);
+
+  useEffect(() => {
+    window.addEventListener("pointerup", cancelRubiksDrag);
+    window.addEventListener("blur", cancelRubiksDrag);
+
+    return () => {
+      window.removeEventListener("pointerup", cancelRubiksDrag);
+      window.removeEventListener("blur", cancelRubiksDrag);
+      cancelRubiksDrag();
+    };
+  }, [cancelRubiksDrag]);
 
   const lastMove =
     gameState.moveHistory.length > 0
@@ -1370,6 +2426,13 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
           (p) => p.type === "king" && p.color === gameState.currentTurn,
         )
       : null;
+  const selectedPiece = gameState.selectedSquare
+    ? gameState.pieces.find(
+        (piece) =>
+          piece.row === gameState.selectedSquare?.row &&
+          piece.col === gameState.selectedSquare.col,
+      )
+    : null;
 
   const squares: React.ReactNode[] = [];
   for (let row = 0; row < 8; row++) {
@@ -1381,7 +2444,19 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
       const isValidMove = gameState.validMoves.some(
         (m) => m.row === row && m.col === col,
       );
+      const isCaptureMove =
+        isValidMove &&
+        !!selectedPiece &&
+        gameState.pieces.some(
+          (piece) =>
+            piece.row === row &&
+            piece.col === col &&
+            piece.color !== selectedPiece.color,
+        );
       const isCheck = kingInCheck?.row === row && kingInCheck?.col === col;
+      const rubiksPreview = getRubiksPreviewOffsets(row, col, rubiksPreviewShift);
+      const isRubiksDragOrigin =
+        rubiksDrag?.start.row === row && rubiksDrag.start.col === col;
 
       squares.push(
         <BoardSquare
@@ -1391,10 +2466,17 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
           isLight={isLight}
           isSelected={isSelected}
           isValidMove={isValidMove}
+          isCaptureMove={isCaptureMove}
           isCheck={isCheck}
           theme={theme}
           onClick={onSquareClick}
           onHover={handleHover}
+          onDragStart={handleSquarePointerDown}
+          onDragEnd={handleSquarePointerUp}
+          visualOffset={rubiksPreview.visualOffset}
+          wrapOffset={rubiksPreview.wrapOffset}
+          isRubiksDragOrigin={isRubiksDragOrigin}
+          isRubiksDragLine={rubiksPreview.isLine}
         />,
       );
     }
@@ -1419,11 +2501,30 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
       <pointLight position={[0, 3.8, -5.4]} intensity={0.7} color={0x8f9cb8} distance={10} />
 
       <group position={[0, BOARD_ELEVATION, 0]}>
+        {theme.boardDecor === "rubiks" && rubiksDrag && (
+          <mesh
+            position={[0, 0.18, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            onPointerMove={(e) => {
+              e.stopPropagation();
+              updateRubiksDragPreview(e.point);
+            }}
+            onPointerUp={(e) => {
+              e.stopPropagation();
+              const start = rubiksDragStart.current?.square;
+              handleSquarePointerUp(start?.row ?? 0, start?.col ?? 0, e.point);
+            }}
+          >
+            <planeGeometry args={[12, 12]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        )}
         <BoardRim theme={theme} />
         {squares}
         <BoardSurfaceOverlay theme={theme} />
         <BoardThemeDecor theme={theme} />
         <BoardNotation theme={theme} />
+        <RubiksDragIndicator shift={rubiksPreviewShift} />
 
         {/* Snakes & Ladders overlay */}
         <SnakeLadderOverlay snakesAndLadders={snakesAndLadders} />
@@ -1442,9 +2543,24 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
             gameState={gameState}
           />
         )}
+        <CapturedPiecePlaceholder
+          key={`captured-piece-${gameState.moveHistory.length}`}
+          move={lastMove}
+          theme={theme}
+        />
 
         {gameState.pieces.map((piece) => {
           const [wx, wy, wz] = boardToWorld(piece.row, piece.col);
+          const rubiksPreview = getRubiksPreviewOffsets(
+            piece.row,
+            piece.col,
+            rubiksPreviewShift,
+          );
+          const previewPosition: [number, number, number] = [
+            wx + rubiksPreview.visualOffset[0],
+            wy + rubiksPreview.visualOffset[1],
+            wz + rubiksPreview.visualOffset[2],
+          ];
           const isSelected =
             gameState.selectedSquare?.row === piece.row &&
             gameState.selectedSquare?.col === piece.col;
@@ -1452,14 +2568,30 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
             hoveredSquare?.row === piece.row && hoveredSquare?.col === piece.col;
 
           return (
-            <ChessPiece
-              key={piece.id}
-              type={piece.type}
-              color={piece.color}
-              position={[wx, wy, wz]}
-              isSelected={isSelected}
-              isHovered={isHovered}
-            />
+            <group key={piece.id}>
+              <ChessPiece
+                type={piece.type}
+                color={piece.color}
+                position={previewPosition}
+                isSelected={isSelected}
+                isHovered={isHovered}
+                visualVariant={theme.boardDecor === "racing" ? "racing" : "default"}
+              />
+              {rubiksPreview.wrapOffset && (
+                <ChessPiece
+                  type={piece.type}
+                  color={piece.color}
+                  position={[
+                    previewPosition[0] + rubiksPreview.wrapOffset[0],
+                    previewPosition[1],
+                    previewPosition[2] + rubiksPreview.wrapOffset[2],
+                  ]}
+                  isSelected={false}
+                  isHovered={false}
+                  visualVariant={theme.boardDecor === "racing" ? "racing" : "default"}
+                />
+              )}
+            </group>
           );
         })}
       </group>
@@ -1471,6 +2603,8 @@ function Scene({ gameState, onSquareClick, snakesAndLadders, mines, theme }: Sce
 interface ChessBoardProps {
   gameState: GameState;
   onSquareClick: (row: number, col: number) => void;
+  onRubiksShift?: (shift: RubiksShift) => void;
+  onRubiksCheckBlocked?: () => void;
   snakesAndLadders: SnakeLadder[];
   mines: Mine[];
   theme: BoardThemeConfig;
@@ -1482,6 +2616,8 @@ interface ChessBoardProps {
 export function ChessBoard3D({
   gameState,
   onSquareClick,
+  onRubiksShift,
+  onRubiksCheckBlocked,
   snakesAndLadders,
   mines,
   theme,
@@ -1490,6 +2626,11 @@ export function ChessBoard3D({
   freeCamera,
 }: ChessBoardProps) {
   const effectiveCameraMode = freeCamera ? "free" : cameraMode;
+  const [rubiksDragActive, setRubiksDragActive] = useState(false);
+
+  useEffect(() => {
+    setRubiksDragActive(false);
+  }, [theme.id, freeCamera, cameraMode]);
 
   return (
     <Canvas
@@ -1502,7 +2643,7 @@ export function ChessBoard3D({
         ],
         fov: 48,
         near: 0.1,
-        far: 120,
+        far: 600,
       }}
       style={{ width: "100%", height: "100%" }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
@@ -1513,12 +2654,15 @@ export function ChessBoard3D({
       <Scene
         gameState={gameState}
         onSquareClick={onSquareClick}
+        onRubiksShift={onRubiksShift}
+        onRubiksDragActiveChange={setRubiksDragActive}
+        onRubiksCheckBlocked={onRubiksCheckBlocked}
         snakesAndLadders={snakesAndLadders}
         mines={mines}
         theme={theme}
       />
       <OrbitControls
-        enabled={effectiveCameraMode !== "intro"}
+        enabled={effectiveCameraMode !== "intro" && !rubiksDragActive}
         enablePan={freeCamera}
         minPolarAngle={Math.PI / 9}
         maxPolarAngle={freeCamera ? Math.PI - 0.05 : Math.PI / 2.4}

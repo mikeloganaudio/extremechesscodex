@@ -138,7 +138,7 @@ export const minesweeperLevel: LevelConfig = {
     {
       id: "minesweeper",
       label: "Minesweeper",
-      description: "4-6 hidden mines appear on ranks 3-6. Any non-king piece landing on one is destroyed.",
+      description: "5-6 hidden mines appear on ranks 3-6. Any non-king piece landing on one is destroyed.",
     },
   ],
   runtime: {
@@ -230,6 +230,7 @@ export const rubiksCubeLevel: LevelConfig = {
       "The board fractures into coloured panels.",
       "White, yellow, orange, red, green, and blue squares lock into a pattern that feels random until it moves.",
       "Death rests one hand beside the board, waiting to twist the rules.",
+      "While a king is safe, either player may move a piece or drag a rank/file to wrap the board. But in check, the board locks: the threat must be answered by a normal move.",
     ],
     victory: [
       "The colours settle, but only for a moment.",
@@ -241,9 +242,9 @@ export const rubiksCubeLevel: LevelConfig = {
   baseRules: defaultRules,
   mechanics: [
     {
-      id: "classic-chess",
-      label: "Classic Chess",
-      description: "Placeholder level: classic rules for now, with Rubik's cube mechanics coming later.",
+      id: "rubiks",
+      label: "Rubik's Cube",
+      description: "Either move a piece or drag a tile to wrap-shift that row or column.",
     },
   ],
   runtime: {

@@ -1,6 +1,8 @@
 import { useState, useCallback } from "react";
-import type { GameState, PieceType, RulesConfig } from "./types";
+import type { GameState, PieceType, RulesConfig, RubiksShift, TurnAction } from "./types";
 import {
+  applyRubiksShift,
+  applyTurnAction,
   createInitialGameState,
   selectSquare,
   promotePane,
@@ -22,6 +24,20 @@ export function useChessGame(rules: RulesConfig = defaultRules) {
   const handlePromotion = useCallback(
     (pieceType: PieceType) => {
       setGameState((prev) => promotePane(prev, pieceType, rules));
+    },
+    [rules],
+  );
+
+  const handleRubiksShift = useCallback(
+    (shift: RubiksShift) => {
+      setGameState((prev) => applyRubiksShift(prev, shift, rules));
+    },
+    [rules],
+  );
+
+  const handleTurnAction = useCallback(
+    (action: TurnAction) => {
+      setGameState((prev) => applyTurnAction(prev, action, rules));
     },
     [rules],
   );
@@ -63,6 +79,8 @@ export function useChessGame(rules: RulesConfig = defaultRules) {
   return {
     gameState,
     handleSquareSelect,
+    handleRubiksShift,
+    handleTurnAction,
     handlePromotion,
     resetGame,
     clearSelection,

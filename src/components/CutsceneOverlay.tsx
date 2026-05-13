@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { CampaignPhase, LevelConfig } from "@/levels/types";
 
 interface CutsceneOverlayProps {
@@ -21,19 +22,75 @@ export function CutsceneOverlay({
   onShowNextLevelIntro,
   onChallengeAgain,
 }: CutsceneOverlayProps) {
+  const [deathReplyVisible, setDeathReplyVisible] = useState(false);
+  const startTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    setDeathReplyVisible(false);
+    if (startTimer.current !== null) {
+      window.clearTimeout(startTimer.current);
+      startTimer.current = null;
+    }
+  }, [phase, level.id]);
+
+  useEffect(
+    () => () => {
+      if (startTimer.current !== null) {
+        window.clearTimeout(startTimer.current);
+      }
+    },
+    [],
+  );
+
+  function handleIntroChoice() {
+    if (deathReplyVisible) return;
+
+    setDeathReplyVisible(true);
+    startTimer.current = window.setTimeout(() => {
+      startTimer.current = null;
+      onStartPlaying();
+    }, 3600);
+  }
+
   if (phase === "playing" || phase === "intro-transition") return null;
 
   if (phase === "intro-board") {
     if (!boardIntroReady) return null;
 
     return (
-      <div className="absolute bottom-8 left-1/2 z-40 -translate-x-1/2">
-        <button
-          onClick={onStartPlaying}
-          className="px-5 py-2 bg-amber-700/90 hover:bg-amber-600/90 text-white text-sm font-semibold shadow-2xl backdrop-blur border border-amber-500/40 transition-colors"
-        >
-          Begin The Match
-        </button>
+      <div className="absolute bottom-7 left-1/2 z-40 w-[min(760px,calc(100vw-32px))] -translate-x-1/2">
+        <div className="border border-stone-700/80 bg-stone-950/84 px-5 py-4 shadow-2xl backdrop-blur-md">
+          <div className="text-[10px] uppercase tracking-[0.28em] text-stone-500">
+            Death
+          </div>
+          {deathReplyVisible ? (
+            <p className="mt-2 text-sm leading-relaxed text-stone-200">
+              Ah. Such arrogance. I have come to expect little else from mortals.
+              Let us see how long yours endures; I have never yet been beaten.
+            </p>
+          ) : (
+            <>
+              <p className="mt-2 text-sm leading-relaxed text-stone-200">
+                Defeat me, and I will return you to the realm of the living. Lose,
+                and you will remain here, in my realm, F O R E V E R . . .
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={handleIntroChoice}
+                  className="border border-stone-600 bg-stone-900/86 px-4 py-3 text-left text-sm text-stone-200 transition-colors hover:border-amber-500/60 hover:bg-stone-800/90"
+                >
+                  Why do I feel like I have seen this exact scenario somewhere before?
+                </button>
+                <button
+                  onClick={handleIntroChoice}
+                  className="border border-stone-600 bg-stone-900/86 px-4 py-3 text-left text-sm text-stone-200 transition-colors hover:border-amber-500/60 hover:bg-stone-800/90"
+                >
+                  I accept your challenge.
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     );
   }

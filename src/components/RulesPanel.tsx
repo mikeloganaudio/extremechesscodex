@@ -25,7 +25,10 @@ export function RulesPanel({
   const pawnRangeMechanic = level.mechanics.find((m) => m.id === "pawn-range");
   const snakeLadderMechanic = level.mechanics.find((m) => m.id === "snakes-ladders");
   const minesweeperMechanic = level.mechanics.find((m) => m.id === "minesweeper");
-  const hasMechanics = Boolean(pawnRangeMechanic || snakeLadderMechanic || minesweeperMechanic);
+  const rubiksMechanic = level.mechanics.find((m) => m.id === "rubiks");
+  const hasMechanics = Boolean(
+    pawnRangeMechanic || snakeLadderMechanic || minesweeperMechanic || rubiksMechanic,
+  );
   const snlEnabled = snakesAndLadders.length > 0;
 
   return (
@@ -161,6 +164,23 @@ export function RulesPanel({
                   </p>
                 </div>
                 <StatusPill active={mines.length > 0} label={`${mines.length} mines`} />
+              </div>
+            </section>
+          )}
+
+          {rubiksMechanic && (
+            <section className="rounded-lg border border-sky-500/50 bg-sky-950/20 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-stone-100 text-sm font-semibold">
+                    {rubiksMechanic.label}
+                  </h3>
+                  <p className="mt-1 text-stone-400 text-xs leading-relaxed">
+                    {rubiksMechanic.description} Drag sideways across a row or vertically
+                    across a file. Wrapped pieces reappear on the opposite edge.
+                  </p>
+                </div>
+                <StatusPill active label="Active" />
               </div>
             </section>
           )}

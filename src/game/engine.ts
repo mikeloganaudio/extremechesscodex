@@ -9,6 +9,8 @@ import type {
   PieceMovementRule,
   SnakeLadder,
   Mine,
+  RubiksShift,
+  TurnAction,
 } from "./types";
 import { defaultRules, applyPawnBuff } from "./defaultRules";
 
@@ -68,6 +70,34 @@ function isMineSquare(mines: Mine[], square: Square): boolean {
 
 function forward(color: PieceColor): number {
   return color === "white" ? 1 : -1;
+}
+
+function isPawnCapturePathClear(
+  piece: Piece,
+  pieces: Piece[],
+  dr: number,
+  dc: number,
+): boolean {
+  const distance = Math.max(Math.abs(dr), Math.abs(dc));
+  if (distance <= 1) return true;
+
+  const rowStep = forward(piece.color);
+  const colStep = Math.sign(dc);
+  for (let step = 1; step < distance; step++) {
+    if (getPieceAt(pieces, piece.row + rowStep * step, piece.col + colStep * step)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function wrapBoardIndex(value: number): number {
+  return ((value % 8) + 8) % 8;
+}
+
+function normalizeShiftAmount(amount: number): number {
+  return wrapBoardIndex(amount);
 }
 
 /** Returns the rules to use given the current buff state. */
@@ -155,6 +185,7 @@ function getRawMoves(
       const nr = piece.row + fwd * Math.abs(dr);
       const nc = piece.col + dc;
       if (!inBounds(nr, nc)) continue;
+      if (!isPawnCapturePathClear(piece, pieces, dr, dc)) continue;
 
       const target = getPieceAt(pieces, nr, nc);
       if (target && target.color !== piece.color) {
@@ -239,7 +270,14 @@ function applyMoveRaw(pieces: Piece[], move: Move): Piece[] {
       (p) => p.row === castleRow && p.col === rookFromCol && p.type === "rook",
     );
     if (rook) {
-      return [...filtered, updated, { ...rook, col: rookToCol, hasMoved: true }];
+      const withoutCastlingRook = filtered.filter(
+        (p) => !(p.row === castleRow && p.col === rookFromCol && p.id === rook.id),
+      );
+      return [
+        ...withoutCastlingRook,
+        updated,
+        { ...rook, col: rookToCol, hasMoved: true },
+      ];
     }
   }
 
@@ -255,6 +293,7 @@ function applyMoveWithTeleport(
   pieces: Piece[],
   move: Move,
   rules: RulesConfig,
+  options: { ignoreMineTrigger?: boolean } = {},
 ): { pieces: Piece[]; teleportedTo: Square | null; mineTriggeredAt: Square | null } {
   const afterMove = applyMoveRaw(pieces, move);
 
@@ -278,6 +317,7 @@ function applyMoveWithTeleport(
   if (
     movedAfterTeleport &&
     movedAfterTeleport.type !== "king" &&
+    !options.ignoreMineTrigger &&
     isMineSquare(rules.mines, landedSquare)
   ) {
     return {
@@ -337,6 +377,7 @@ function getThreatenedSquares(
   const captureDirs = rule.captureOnly ?? [[1, 1], [1, -1]];
 
   return captureDirs
+    .filter(([dr, dc]) => isPawnCapturePathClear(piece, pieces, dr, dc))
     .map(([dr, dc]) => ({
       row: piece.row + fwd * Math.abs(dr),
       col: piece.col + dc,
@@ -367,6 +408,78 @@ function isInCheck(pieces: Piece[], color: PieceColor, rules: RulesConfig): bool
   if (!king) return false;
   const enemy = color === "white" ? "black" : "white";
   return isSquareAttacked(pieces, king.row, king.col, enemy, rules);
+}
+
+function applyRubiksShiftToPieces(pieces: Piece[], shift: RubiksShift): Piece[] {
+  const amount = normalizeShiftAmount(shift.amount);
+  if (amount === 0) return pieces;
+
+  return pieces.map((piece) => {
+    if (shift.axis === "row" && piece.row === shift.index) {
+      return { ...piece, col: wrapBoardIndex(piece.col + amount), hasMoved: true };
+    }
+    if (shift.axis === "col" && piece.col === shift.index) {
+      return { ...piece, row: wrapBoardIndex(piece.row + amount), hasMoved: true };
+    }
+    return piece;
+  });
+}
+
+function isLegalRubiksShift(
+  pieces: Piece[],
+  color: PieceColor,
+  shift: RubiksShift,
+  rules: RulesConfig,
+): boolean {
+  if (!rules.rubiksMode) return false;
+  if (shift.index < 0 || shift.index > 7) return false;
+  if (normalizeShiftAmount(shift.amount) === 0) return false;
+  const shiftedPieces = applyRubiksShiftToPieces(pieces, shift);
+  return !isInCheck(shiftedPieces, color, rules);
+}
+
+function getLegalRubiksShifts(
+  pieces: Piece[],
+  color: PieceColor,
+  rules: RulesConfig,
+): RubiksShift[] {
+  if (!rules.rubiksMode) return [];
+  if (isInCheck(pieces, color, rules)) return [];
+
+  const shifts: RubiksShift[] = [];
+  for (const axis of ["row", "col"] as const) {
+    for (let index = 0; index < 8; index++) {
+      for (let amount = 1; amount < 8; amount++) {
+        const shift = { axis, index, amount };
+        if (isLegalRubiksShift(pieces, color, shift, rules)) {
+          shifts.push(shift);
+        }
+      }
+    }
+  }
+
+  return shifts;
+}
+
+function hasAnyLegalRubiksShift(
+  pieces: Piece[],
+  color: PieceColor,
+  rules: RulesConfig,
+): boolean {
+  return getLegalRubiksShifts(pieces, color, rules).length > 0;
+}
+
+function hasAnyLegalTurnAction(
+  pieces: Piece[],
+  color: PieceColor,
+  enPassantTarget: Square | null,
+  rules: RulesConfig,
+): boolean {
+  const hasPieceMove = pieces
+    .filter((p) => p.color === color)
+    .some((p) => getValidMovesForPiece(p, pieces, enPassantTarget, rules).length > 0);
+
+  return hasPieceMove || hasAnyLegalRubiksShift(pieces, color, rules);
 }
 
 /* ─── Castling ─── */
@@ -450,6 +563,60 @@ export function getValidMovesForPiece(
   });
 }
 
+export function getLegalTurnActions(
+  state: GameState,
+  rules: RulesConfig = defaultRules,
+): TurnAction[] {
+  if (state.status === "checkmate" || state.status === "stalemate") return [];
+  if (state.promotionPending) return [];
+
+  const effRules = effectiveRules(rules, state.pawnBuffMovesLeft);
+  const actions: TurnAction[] = [];
+
+  for (const piece of state.pieces.filter((p) => p.color === state.currentTurn)) {
+    const validMoves = getValidMovesForPiece(
+      piece,
+      state.pieces,
+      state.enPassantTarget,
+      effRules,
+    );
+
+    for (const square of validMoves) {
+      const isCastle = piece.type === "king" && Math.abs(square.col - piece.col) === 2;
+      const isEnPassant =
+        piece.type === "pawn" &&
+        state.enPassantTarget?.row === square.row &&
+        state.enPassantTarget?.col === square.col &&
+        square.col !== piece.col;
+      const reachesPromotion =
+        effRules.allowPromotion &&
+        piece.type === "pawn" &&
+        square.row === (piece.color === "white" ? 7 : 0);
+
+      actions.push({
+        kind: "move",
+        move: {
+          from: { row: piece.row, col: piece.col },
+          to: square,
+          isCastle: isCastle
+            ? square.col > piece.col ? "kingside" : "queenside"
+            : undefined,
+          isEnPassant: isEnPassant || false,
+          promotionPiece: reachesPromotion ? "queen" : undefined,
+        },
+      });
+    }
+  }
+
+  actions.push(
+    ...getLegalRubiksShifts(state.pieces, state.currentTurn, effRules).map(
+      (shift): TurnAction => ({ kind: "rubiks-shift", shift }),
+    ),
+  );
+
+  return actions;
+}
+
 /* ─── Apply move to full game state ─── */
 
 export function applyMove(
@@ -473,19 +640,36 @@ export function applyMove(
       );
 
   const newMove: Move = { ...move, capturedPiece };
+  const isFirstMoveForCurrentColor = state.moveHistory.every((_, index) =>
+    state.currentTurn === "white" ? index % 2 !== 0 : index % 2 !== 1,
+  );
 
   // Apply move + teleport resolution
   const { pieces: piecesAfterMove, teleportedTo, mineTriggeredAt } = applyMoveWithTeleport(
     state.pieces,
     newMove,
     effRules,
+    { ignoreMineTrigger: isFirstMoveForCurrentColor },
   );
 
   const newPieces = piecesAfterMove;
+  const teleportCapturedPiece = teleportedTo
+    ? state.pieces.find(
+        (p) =>
+          p.row === teleportedTo.row &&
+          p.col === teleportedTo.col &&
+          p.color !== movingPiece.color,
+      )
+    : undefined;
 
   // Record teleport in move history entry
   const recordedMove: Move = teleportedTo
-    ? { ...newMove, teleportedTo, ...(mineTriggeredAt ? { mineTriggeredAt } : {}) }
+    ? {
+        ...newMove,
+        teleportedTo,
+        ...(teleportCapturedPiece ? { teleportCapturedPiece } : {}),
+        ...(mineTriggeredAt ? { mineTriggeredAt } : {}),
+      }
     : { ...newMove, ...(mineTriggeredAt ? { mineTriggeredAt } : {}) };
 
   // En passant target for the next ply
@@ -506,17 +690,9 @@ export function applyMove(
     else capturedBlack.push(capturedPiece);
   }
   // Also capture any piece removed by teleport at the exit
-  if (teleportedTo) {
-    const teleportCaptured = state.pieces.find(
-      (p) =>
-        p.row === teleportedTo.row &&
-        p.col === teleportedTo.col &&
-        p.color !== movingPiece.color,
-    );
-    if (teleportCaptured) {
-      if (teleportCaptured.color === "white") capturedWhite.push(teleportCaptured);
-      else capturedBlack.push(teleportCaptured);
-    }
+  if (teleportCapturedPiece) {
+    if (teleportCapturedPiece.color === "white") capturedWhite.push(teleportCapturedPiece);
+    else capturedBlack.push(teleportCapturedPiece);
   }
   if (mineTriggeredAt) {
     if (movingPiece.color === "white") capturedWhite.push(movingPiece);
@@ -542,11 +718,12 @@ export function applyMove(
 
   // Win condition with the rules active next ply
   const nextEffRules = effectiveRules(rules, pawnBuffMovesLeft);
-  const enemyHasMoves = newPieces
-    .filter((p) => p.color === nextTurn)
-    .some(
-      (p) => getValidMovesForPiece(p, newPieces, enPassantTarget, nextEffRules).length > 0,
-    );
+  const enemyHasMoves = hasAnyLegalTurnAction(
+    newPieces,
+    nextTurn,
+    enPassantTarget,
+    nextEffRules,
+  );
 
   const enemyInCheck = isInCheck(newPieces, nextTurn, nextEffRules);
 
@@ -571,7 +748,72 @@ export function applyMove(
   };
 }
 
+export function applyTurnAction(
+  state: GameState,
+  action: TurnAction,
+  rules: RulesConfig = defaultRules,
+): GameState {
+  return action.kind === "move"
+    ? applyMove(state, action.move, rules)
+    : applyRubiksShift(state, action.shift, rules);
+}
+
 /* ─── Select square (click handling) ─── */
+
+export function applyRubiksShift(
+  state: GameState,
+  shift: RubiksShift,
+  rules: RulesConfig = defaultRules,
+): GameState {
+  if (!rules.rubiksMode) return state;
+  if (state.status === "checkmate" || state.status === "stalemate") return state;
+  if (state.promotionPending) return state;
+
+  const effRules = effectiveRules(rules, state.pawnBuffMovesLeft);
+  const amount = normalizeShiftAmount(shift.amount);
+  if (amount === 0) return state;
+  if (isInCheck(state.pieces, state.currentTurn, effRules)) return state;
+
+  const normalizedShift: RubiksShift = { ...shift, amount };
+  if (!isLegalRubiksShift(state.pieces, state.currentTurn, normalizedShift, effRules)) {
+    return state;
+  }
+
+  const newPieces = applyRubiksShiftToPieces(state.pieces, normalizedShift);
+  const nextTurn: PieceColor = state.currentTurn === "white" ? "black" : "white";
+  const pawnBuffMovesLeft = Math.max(0, state.pawnBuffMovesLeft - 1);
+  const nextEffRules = effectiveRules(rules, pawnBuffMovesLeft);
+  const enemyHasMoves = hasAnyLegalTurnAction(newPieces, nextTurn, null, nextEffRules);
+  const enemyInCheck = isInCheck(newPieces, nextTurn, nextEffRules);
+
+  let status: GameState["status"] = "playing";
+  if (!enemyHasMoves) status = enemyInCheck ? "checkmate" : "stalemate";
+  else if (enemyInCheck) status = "check";
+
+  const recordedMove: Move = {
+    from: {
+      row: normalizedShift.axis === "row" ? normalizedShift.index : 0,
+      col: normalizedShift.axis === "col" ? normalizedShift.index : 0,
+    },
+    to: {
+      row: normalizedShift.axis === "row" ? normalizedShift.index : 0,
+      col: normalizedShift.axis === "col" ? normalizedShift.index : 0,
+    },
+    rubiksShift: normalizedShift,
+  };
+
+  return {
+    ...state,
+    pieces: newPieces,
+    currentTurn: nextTurn,
+    status,
+    selectedSquare: null,
+    validMoves: [],
+    moveHistory: [...state.moveHistory, recordedMove],
+    enPassantTarget: null,
+    pawnBuffMovesLeft,
+  };
+}
 
 export function selectSquare(
   state: GameState,
@@ -658,11 +900,12 @@ export function promotePane(
   );
 
   const effRules      = effectiveRules(rules, state.pawnBuffMovesLeft);
-  const enemyHasMoves = newPieces
-    .filter((p) => p.color === state.currentTurn)
-    .some(
-      (p) => getValidMovesForPiece(p, newPieces, state.enPassantTarget, effRules).length > 0,
-    );
+  const enemyHasMoves = hasAnyLegalTurnAction(
+    newPieces,
+    state.currentTurn,
+    state.enPassantTarget,
+    effRules,
+  );
 
   const enemyInCheck = isInCheck(newPieces, state.currentTurn, effRules);
 

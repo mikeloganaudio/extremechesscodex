@@ -13,12 +13,19 @@ const PIECE_LETTERS: Record<PieceType, string> = {
 };
 
 function moveToAlgebraic(move: Move): string {
+  if (move.rubiksShift) {
+    const label = move.rubiksShift.axis === "row"
+      ? `R${move.rubiksShift.index + 1}`
+      : `F${COL_LETTERS[move.rubiksShift.index]}`;
+    return `${label}${move.rubiksShift.amount > 0 ? "+" : ""}${move.rubiksShift.amount}`;
+  }
+
   if (move.isCastle === "kingside") return "O-O";
   if (move.isCastle === "queenside") return "O-O-O";
 
-  const piece = move.capturedPiece ? PIECE_LETTERS["pawn"] : "";
+  const piece = move.capturedPiece || move.teleportCapturedPiece ? PIECE_LETTERS["pawn"] : "";
   const from = `${COL_LETTERS[move.from.col]}${move.from.row + 1}`;
-  const capture = move.capturedPiece || move.isEnPassant ? "x" : "";
+  const capture = move.capturedPiece || move.teleportCapturedPiece || move.isEnPassant ? "x" : "";
   const to = `${COL_LETTERS[move.to.col]}${move.to.row + 1}`;
   const promo = move.promotionPiece
     ? `=${PIECE_LETTERS[move.promotionPiece]}`

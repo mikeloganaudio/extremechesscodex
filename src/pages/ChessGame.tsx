@@ -9,6 +9,7 @@ import { RulesPanel } from "@/components/RulesPanel";
 import { WebGLCheck } from "@/components/WebGLCheck";
 import { useChessGame } from "@/game/useChessGame";
 import { generateSnakesAndLadders } from "@/game/snakesLadders";
+import { chooseWeightedOpponentAction } from "@/game/opponentAi";
 import { levelCatalog } from "@/levels/levelCatalog";
 import {
   createLevelRules,
@@ -24,6 +25,7 @@ export default function ChessGame() {
   const [freeCameraEnabled, setFreeCameraEnabled] = useState(false);
   const [introFadeStage, setIntroFadeStage] = useState<"none" | "fade-out" | "hold" | "fade-in">("none");
   const [boardIntroReady, setBoardIntroReady] = useState(false);
+  const [rubiksCheckMessageVisible, setRubiksCheckMessageVisible] = useState(false);
   const activeLevel = levelCatalog[activeLevelIndex];
   const hasNextLevel = activeLevelIndex < levelCatalog.length - 1;
   const [levelRuntime, setLevelRuntime] = useState(() =>
@@ -38,11 +40,19 @@ export default function ChessGame() {
   const {
     gameState,
     handleSquareSelect,
+    handleRubiksShift,
+    handleTurnAction,
     handlePromotion,
     resetGame,
     activatePawnBuff,
     deactivatePawnBuff,
   } = useChessGame(activeRules);
+  const [opponentThinking, setOpponentThinking] = useState(false);
+  const playerInputLocked =
+    phase !== "playing" ||
+    opponentThinking ||
+    gameState.currentTurn === "black" ||
+    !!gameState.promotionPending;
 
   useEffect(() => {
     if (phase === "playing" && gameState.status === "checkmate") {
@@ -57,12 +67,42 @@ export default function ChessGame() {
   }, [phase]);
 
   useEffect(() => {
+    if (!rubiksCheckMessageVisible) return;
+    const timer = window.setTimeout(() => {
+      setRubiksCheckMessageVisible(false);
+    }, 4200);
+
+    return () => window.clearTimeout(timer);
+  }, [rubiksCheckMessageVisible]);
+
+  useEffect(() => {
+    if (phase !== "playing") return;
+    if (gameState.currentTurn !== "black") return;
+    if (gameState.promotionPending) return;
+    if (gameState.status === "checkmate" || gameState.status === "stalemate") return;
+
+    setOpponentThinking(true);
+    const timer = window.setTimeout(() => {
+      const action = chooseWeightedOpponentAction(gameState, activeRules);
+      if (action) {
+        handleTurnAction(action);
+      }
+      setOpponentThinking(false);
+    }, 650 + Math.random() * 650);
+
+    return () => {
+      window.clearTimeout(timer);
+      setOpponentThinking(false);
+    };
+  }, [activeRules, gameState, handleTurnAction, phase]);
+
+  useEffect(() => {
     if (phase !== "intro-board") return;
 
     setBoardIntroReady(false);
     const timer = window.setTimeout(() => {
       setBoardIntroReady(true);
-    }, 8500);
+    }, 12800);
 
     return () => window.clearTimeout(timer);
   }, [cameraSequenceKey, phase]);
@@ -89,17 +129,17 @@ export default function ChessGame() {
 
     window.setTimeout(() => {
       setIntroFadeStage("hold");
-    }, 500);
+    }, 350);
 
     window.setTimeout(() => {
       setPhase("intro-board");
       setIntroFadeStage("fade-in");
-    }, 1000);
+    }, 500);
 
     window.setTimeout(() => {
       setCameraSequenceKey((key) => key + 1);
       setIntroFadeStage("none");
-    }, 1500);
+    }, 850);
   }
 
   function handleStartPlaying() {
@@ -138,6 +178,11 @@ export default function ChessGame() {
         {phase === "playing" && (
           <>
             <GameHUD gameState={gameState} onReset={resetGame} />
+            {opponentThinking && (
+              <div className="absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-lg border border-stone-700 bg-stone-950/82 px-4 py-2 text-sm text-stone-300 shadow-xl backdrop-blur">
+                Death is considering...
+              </div>
+            )}
             <CampaignHUD
               levels={levelCatalog}
               activeLevel={activeLevel}
@@ -158,7 +203,9 @@ export default function ChessGame() {
           >
             <ChessBoard3D
               gameState={gameState}
-              onSquareClick={freeCameraEnabled ? () => undefined : handleSquareSelect}
+              onSquareClick={freeCameraEnabled || playerInputLocked ? () => undefined : handleSquareSelect}
+              onRubiksShift={freeCameraEnabled || playerInputLocked ? undefined : handleRubiksShift}
+              onRubiksCheckBlocked={() => setRubiksCheckMessageVisible(true)}
               snakesAndLadders={levelRuntime.snakesAndLadders}
               mines={levelRuntime.mines}
               theme={activeLevel.theme}
@@ -182,6 +229,17 @@ export default function ChessGame() {
             />
           )}
         </div>
+
+        {phase === "playing" && rubiksCheckMessageVisible && (
+          <div className="absolute left-1/2 top-28 z-40 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 border border-red-500/45 bg-stone-950/88 px-4 py-3 text-sm text-stone-200 shadow-2xl backdrop-blur">
+            <p className="text-red-200">
+              The king is named. You cannot simply rotate reality away.
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-stone-400">
+              Rule: while in check, Rubik shifts are locked. Resolve the check with a normal piece move.
+            </p>
+          </div>
+        )}
 
         {phase === "playing" && (
           <>
@@ -225,7 +283,11 @@ export default function ChessGame() {
               <p className="text-stone-600 text-xs whitespace-nowrap">
                 {freeCameraEnabled
                   ? "Free camera - Drag to orbit - Right-drag to pan - Wheel or pinch to zoom"
-                  : "Tap a piece - Tap a green dot to move - Pinch to zoom - Drag to orbit"}
+                  : opponentThinking
+                    ? "Death is considering..."
+                    : activeRules.rubiksMode
+                    ? "Tap a piece to move - Drag across a tile row or file to shift it - Pinch to zoom"
+                    : "Tap a piece - Tap a highlighted square to move - Pinch to zoom - Drag to orbit"}
               </p>
             </div>
           </>
@@ -246,9 +308,9 @@ export default function ChessGame() {
           <div
             className={`absolute inset-0 z-50 bg-black pointer-events-none ${
               introFadeStage === "fade-out"
-                ? "animate-[fadeToBlack_500ms_ease-in_forwards]"
+                ? "animate-[fadeToBlack_350ms_ease-in_forwards]"
                 : introFadeStage === "fade-in"
-                  ? "animate-[fadeFromBlack_500ms_ease-out_forwards]"
+                  ? "animate-[fadeFromBlack_350ms_ease-out_forwards]"
                   : "opacity-100"
             }`}
           />

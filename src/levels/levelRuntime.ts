@@ -25,6 +25,7 @@ export function createLevelRules(
       : level.baseRules.pawnRangeMode,
     snakesAndLadders: runtime.snakesAndLadders,
     mines: runtime.mines,
+    rubiksMode: level.mechanics.some((m) => m.id === "rubiks"),
   };
 }
 
