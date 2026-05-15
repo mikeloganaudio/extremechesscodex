@@ -119,7 +119,7 @@ export default function ChessGame() {
   function handleSelectLevel(index: number) {
     loadLevel(index);
     setBoardIntroReady(false);
-    setPhase(index === 0 ? "intro-video" : "between-levels");
+    setPhase("between-levels");
   }
 
   function handleBeginBoardIntro() {
@@ -175,6 +175,14 @@ export default function ChessGame() {
   return (
     <WebGLCheck>
       <div className={`w-full h-screen ${activeLevel.theme.backgroundClassName} flex flex-col relative overflow-hidden`}>
+        <CampaignHUD
+          levels={levelCatalog}
+          activeLevel={activeLevel}
+          gameState={gameState}
+          onSelectLevel={handleSelectLevel}
+          onNextLevel={handleShowNextLevelIntro}
+        />
+
         {phase === "playing" && (
           <>
             <GameHUD gameState={gameState} onReset={resetGame} />
@@ -183,13 +191,6 @@ export default function ChessGame() {
                 Death is considering...
               </div>
             )}
-            <CampaignHUD
-              levels={levelCatalog}
-              activeLevel={activeLevel}
-              gameState={gameState}
-              onSelectLevel={handleSelectLevel}
-              onNextLevel={handleShowNextLevelIntro}
-            />
           </>
         )}
 

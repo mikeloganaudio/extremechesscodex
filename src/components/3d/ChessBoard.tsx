@@ -150,6 +150,7 @@ function PixelLabel({
 function BoardNotation({ theme }: { theme: BoardThemeConfig }) {
   if (theme.boardDecor === "retro-lcd") return <RetroBoardNotation />;
   if (theme.boardDecor === "rubiks") return <RubiksBoardNotation />;
+  if (theme.boardDecor === "racing") return <RacingBoardNotation />;
 
   const labelColor = "#b8a090";
   const labelSize = 0.22;
@@ -223,6 +224,97 @@ function BoardNotation({ theme }: { theme: BoardThemeConfig }) {
       >
         {rankNum}
       </Text>
+    );
+  }
+
+  return <>{labels}</>;
+}
+
+function RacingBoardNotation() {
+  const labels: React.ReactNode[] = [];
+  const labelSize = 0.25;
+  const labelHeight = 0.076;
+  const frontBackZ = 4.4;
+  const sideX = 4.4;
+
+  for (let col = 0; col < 8; col++) {
+    const wx = col * SQUARE_SIZE - 3.5;
+    labels.push(
+      <Text
+        key={`racing-col-front-${col}`}
+        position={[wx, labelHeight, frontBackZ]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={labelSize}
+        color="#f4f4ef"
+        fillOpacity={0.94}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.012}
+        outlineColor="#e01d2f"
+        font={undefined}
+      >
+        {COL_LETTERS[col]}
+      </Text>,
+    );
+    labels.push(
+      <Text
+        key={`racing-col-back-${col}`}
+        position={[wx, labelHeight, -frontBackZ]}
+        rotation={[-Math.PI / 2, 0, Math.PI]}
+        fontSize={labelSize}
+        color="#f4f4ef"
+        fillOpacity={0.94}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.012}
+        outlineColor="#e01d2f"
+        font={undefined}
+      >
+        {COL_LETTERS[col]}
+      </Text>,
+    );
+  }
+
+  for (let row = 0; row < 8; row++) {
+    const wz = -(row * SQUARE_SIZE - 3.5);
+    const rankNum = String(row + 1);
+    labels.push(
+      <Text
+        key={`racing-row-left-${row}`}
+        position={[-sideX, labelHeight, wz]}
+        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+        fontSize={labelSize}
+        color="#f4f4ef"
+        fillOpacity={0.94}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.012}
+        outlineColor="#e01d2f"
+        font={undefined}
+      >
+        {rankNum}
+      </Text>,
+    );
+    labels.push(
+      <Text
+        key={`racing-row-right-${row}`}
+        position={[sideX, labelHeight, wz]}
+        rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
+        fontSize={labelSize}
+        color="#f4f4ef"
+        fillOpacity={0.94}
+        anchorX="center"
+        anchorY="middle"
+        fontWeight={650}
+        outlineWidth={0.012}
+        outlineColor="#e01d2f"
+        font={undefined}
+      >
+        {rankNum}
+      </Text>,
     );
   }
 
@@ -769,49 +861,133 @@ function RubiksDecor() {
 }
 
 function RacingDecor() {
-  const stripePositions = [-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5];
+  const kerbPositions = Array.from({ length: 19 }, (_, index) => -4.5 + index * 0.5);
 
   return (
     <group>
-      <mesh position={[0, 0.018, -4.62]} raycast={() => null}>
-        <boxGeometry args={[8.4, 0.026, 0.12]} />
-        <meshBasicMaterial color={0xe01d2f} transparent opacity={0.88} depthWrite={false} />
+      <mesh position={[0, -0.015, -4.55]} raycast={() => null}>
+        <boxGeometry args={[9.05, 0.18, 0.18]} />
+        <meshBasicMaterial color={0x050505} />
       </mesh>
-      <mesh position={[0, 0.019, 4.62]} raycast={() => null}>
-        <boxGeometry args={[8.4, 0.026, 0.12]} />
-        <meshBasicMaterial color={0xe01d2f} transparent opacity={0.88} depthWrite={false} />
+      <mesh position={[0, -0.015, 4.55]} raycast={() => null}>
+        <boxGeometry args={[9.05, 0.18, 0.18]} />
+        <meshBasicMaterial color={0x050505} />
       </mesh>
-      <mesh position={[0, 0.02, -4.38]} raycast={() => null}>
-        <boxGeometry args={[8.0, 0.022, 0.055]} />
-        <meshBasicMaterial color={0xffffff} transparent opacity={0.8} depthWrite={false} />
+      <mesh position={[-4.55, -0.015, 0]} raycast={() => null}>
+        <boxGeometry args={[0.18, 0.18, 9.05]} />
+        <meshBasicMaterial color={0x050505} />
       </mesh>
-      <mesh position={[0, 0.02, 4.38]} raycast={() => null}>
-        <boxGeometry args={[8.0, 0.022, 0.055]} />
-        <meshBasicMaterial color={0xffffff} transparent opacity={0.8} depthWrite={false} />
+      <mesh position={[4.55, -0.015, 0]} raycast={() => null}>
+        <boxGeometry args={[0.18, 0.18, 9.05]} />
+        <meshBasicMaterial color={0x050505} />
       </mesh>
-      {stripePositions.map((x, index) => (
-        <mesh key={`start-stripe-${index}`} position={[x, 0.046, 3.95]} raycast={() => null}>
-          <boxGeometry args={[0.5, 0.026, 0.18]} />
-          <meshBasicMaterial color={index % 2 === 0 ? 0xffffff : 0x020202} transparent opacity={0.86} depthWrite={false} />
+
+      <RacingFrameBand offset={4.55} thickness={0.22} color={0x18a978} opacity={0.84} />
+
+      {kerbPositions.map((x, index) => (
+        <mesh key={`racing-kerb-front-${index}`} position={[x, 0.052, 4.705]} raycast={() => null}>
+          <boxGeometry args={[0.5, 0.026, 0.09]} />
+          <meshBasicMaterial
+            color={index % 2 === 0 ? 0xf4f4ef : 0xe01d2f}
+            transparent
+            opacity={0.88}
+            depthWrite={false}
+          />
         </mesh>
       ))}
-      {stripePositions.map((x, index) => (
-        <mesh key={`finish-stripe-${index}`} position={[x, 0.046, -3.95]} raycast={() => null}>
-          <boxGeometry args={[0.5, 0.026, 0.18]} />
-          <meshBasicMaterial color={index % 2 === 0 ? 0x020202 : 0xffffff} transparent opacity={0.72} depthWrite={false} />
+      {kerbPositions.map((x, index) => (
+        <mesh key={`racing-kerb-back-${index}`} position={[x, 0.052, -4.705]} raycast={() => null}>
+          <boxGeometry args={[0.5, 0.026, 0.09]} />
+          <meshBasicMaterial
+            color={index % 2 === 0 ? 0xe01d2f : 0xf4f4ef}
+            transparent
+            opacity={0.88}
+            depthWrite={false}
+          />
         </mesh>
       ))}
-      {[-4.32, 4.32].map((x) => (
-        <group key={`kerb-${x}`}>
-          {[-2.8, -2.0, -1.2, -0.4, 0.4, 1.2, 2.0, 2.8].map((z, index) => (
-            <mesh key={`${x}-${z}`} position={[x, 0.04, z]} raycast={() => null}>
-              <boxGeometry args={[0.28, 0.024, 0.5]} />
-              <meshBasicMaterial color={index % 2 === 0 ? 0xe01d2f : 0xf0f0ec} transparent opacity={0.78} depthWrite={false} />
-            </mesh>
-          ))}
-        </group>
+      {kerbPositions.map((z, index) => (
+        <mesh key={`racing-kerb-left-${index}`} position={[-4.705, 0.052, z]} raycast={() => null}>
+          <boxGeometry args={[0.09, 0.026, 0.5]} />
+          <meshBasicMaterial
+            color={index % 2 === 0 ? 0xe01d2f : 0xf4f4ef}
+            transparent
+            opacity={0.88}
+            depthWrite={false}
+          />
+        </mesh>
       ))}
+      {kerbPositions.map((z, index) => (
+        <mesh key={`racing-kerb-right-${index}`} position={[4.705, 0.052, z]} raycast={() => null}>
+          <boxGeometry args={[0.09, 0.026, 0.5]} />
+          <meshBasicMaterial
+            color={index % 2 === 0 ? 0xf4f4ef : 0xe01d2f}
+            transparent
+            opacity={0.88}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+      <RacingCornerPatch x={-4.705} z={-4.705} color={0xe01d2f} />
+      <RacingCornerPatch x={4.705} z={-4.705} color={0xf4f4ef} />
+      <RacingCornerPatch x={-4.705} z={4.705} color={0xf4f4ef} />
+      <RacingCornerPatch x={4.705} z={4.705} color={0xe01d2f} />
       <pointLight position={[0, 1.0, 4.2]} color={0xff3030} intensity={0.45} distance={4.5} />
+    </group>
+  );
+}
+
+function RacingCornerPatch({
+  x,
+  z,
+  color,
+}: {
+  x: number;
+  z: number;
+  color: number;
+}) {
+  return (
+    <mesh position={[x, 0.053, z]} raycast={() => null}>
+      <boxGeometry args={[0.09, 0.026, 0.09]} />
+      <meshBasicMaterial color={color} transparent opacity={0.88} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function RacingFrameBand({
+  offset,
+  thickness,
+  color,
+  opacity: _opacity,
+}: {
+  offset: number;
+  thickness: number;
+  color: number;
+  opacity: number;
+}) {
+  const outerEdge = offset + thickness / 2;
+  const innerEdge = offset - thickness / 2;
+  const center = (outerEdge + innerEdge) / 2;
+  const span = outerEdge * 2;
+
+  return (
+    <group>
+      <mesh position={[0, 0.066, center]} raycast={() => null}>
+        <boxGeometry args={[span, 0.03, thickness]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+      <mesh position={[0, 0.066, -center]} raycast={() => null}>
+        <boxGeometry args={[span, 0.03, thickness]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+      <mesh position={[center, 0.066, 0]} raycast={() => null}>
+        <boxGeometry args={[thickness, 0.03, span]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+      <mesh position={[-center, 0.066, 0]} raycast={() => null}>
+        <boxGeometry args={[thickness, 0.03, span]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
     </group>
   );
 }
