@@ -23,7 +23,7 @@ export default function ChessGame() {
   const [phase, setPhase] = useState<CampaignPhase>("intro-video");
   const [cameraSequenceKey, setCameraSequenceKey] = useState(0);
   const [freeCameraEnabled, setFreeCameraEnabled] = useState(false);
-  const [introFadeStage, setIntroFadeStage] = useState<"none" | "fade-out" | "hold" | "fade-in">("none");
+  const [introFadeStage, setIntroFadeStage] = useState<"none" | "fade-out" | "hold" | "fade-in" | "slow-fade-in">("none");
   const [boardIntroReady, setBoardIntroReady] = useState(false);
   const [rubiksCheckMessageVisible, setRubiksCheckMessageVisible] = useState(false);
   const activeLevel = levelCatalog[activeLevelIndex];
@@ -122,9 +122,32 @@ export default function ChessGame() {
     setPhase("between-levels");
   }
 
-  function handleBeginBoardIntro() {
+  function handleBeginBoardIntro(alreadyBlack = false) {
     setBoardIntroReady(false);
     setPhase("intro-transition");
+
+    if (alreadyBlack) {
+      setIntroFadeStage("hold");
+
+      window.setTimeout(() => {
+        setPhase("intro-board");
+      }, 120);
+
+      window.setTimeout(() => {
+        setCameraSequenceKey((key) => key + 1);
+      }, 180);
+
+      window.setTimeout(() => {
+        setIntroFadeStage("slow-fade-in");
+      }, 4300);
+
+      window.setTimeout(() => {
+        setIntroFadeStage("none");
+      }, 6600);
+
+      return;
+    }
+
     setIntroFadeStage("fade-out");
 
     window.setTimeout(() => {
@@ -232,7 +255,7 @@ export default function ChessGame() {
         </div>
 
         {phase === "playing" && rubiksCheckMessageVisible && (
-          <div className="absolute left-1/2 top-28 z-40 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 border border-red-500/45 bg-stone-950/88 px-4 py-3 text-sm text-stone-200 shadow-2xl backdrop-blur">
+          <div className="eighth-dialog-shell eighth-dialog-warning absolute left-1/2 top-28 z-40 w-[min(560px,calc(100vw-32px))] -translate-x-1/2 px-4 py-3">
             <p className="text-red-200">
               The king is named. You cannot simply rotate reality away.
             </p>
@@ -312,6 +335,8 @@ export default function ChessGame() {
                 ? "animate-[fadeToBlack_350ms_ease-in_forwards]"
                 : introFadeStage === "fade-in"
                   ? "animate-[fadeFromBlack_350ms_ease-out_forwards]"
+                  : introFadeStage === "slow-fade-in"
+                    ? "animate-[fadeFromBlack_2200ms_ease-in-out_forwards]"
                   : "opacity-100"
             }`}
           />
