@@ -161,12 +161,12 @@ export function CutsceneOverlay({
 const introScenes = [
   {
     image: "/assets/preintro/fallen-knight-clean.png",
-    text: "You lie broken on a muddy hill, alone and far from home. Your life of chivalry and honour is cut short by a lucky blow in the chaos of a battle you did not understand, for a lord who does not know you exist. Your grip on this world fades as you gaze up at the sky over a land you will never know by name, and die.",
+    text: "You lie bleeding and broken atop a muddy hill, alone and far from home. Your life of honour and chivalry was cruelly cut short by a lucky blow, in the chaos of a battle you didn't even understand, for a lord who doesn't even know you exist. As your grip on this world fades, you gaze up at an unfamiliar sky, and die.",
     render: <FlagFlipbook />,
   },
   {
     image: "/assets/preintro/storm-beach.png",
-    text: "You wake to rain on a shore you do not know. Your wound is gone. Your sword is gone. The world behind you has vanished, and far by the water a dark figure waits as though it knew you would arrive.",
+    text: "You wake and find yourself on a mysterious shore. Your wound is gone, along with your sword. Despite the rain, you feel neither warm nor cold. In the distance a lone dark figure sits by the water, as if waiting for you.",
     render: (
       <>
         <CloudAndWaveFlicker variant="beach" />
@@ -176,7 +176,7 @@ const introScenes = [
   },
   {
     image: "/assets/preintro/death-awaits.png",
-    text: "The figure has laid out a chessboard between you. It gives no name, no comfort, and no answer to where you are. It only rests one pale hand beside the pieces, and waits for you to make the first move.",
+    text: "The figure has laid out a chessboard between you. It gives no name, no comfort, and no answer to where you are. It merely leans over the pieces expectantly, and waits for you to make the first move.",
     render: (
       <>
         <CloudAndWaveFlicker variant="death" />
@@ -313,26 +313,33 @@ function CloudAndWaveFlicker({ variant = "beach" }: { variant?: "beach" | "death
           isDeathFrame ? "opacity-45" : "opacity-70"
         }`}
       />
-      <svg
-        className={`absolute left-0 h-[22%] w-full preintro-wave-flicker ${
-          isDeathFrame ? "bottom-[28%] opacity-35" : "bottom-[36%] opacity-50"
-        }`}
-        viewBox="0 0 1200 200"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <path d="M-20 112 C90 81 178 141 290 106 C420 66 496 139 626 101 C776 57 869 130 1006 96 C1098 73 1162 91 1220 78" fill="none" stroke="rgba(245,245,245,0.42)" strokeWidth="7" />
-        <path d="M-15 147 C104 126 189 167 306 139 C429 110 541 161 665 134 C786 107 893 167 1018 131 C1095 108 1163 139 1220 119" fill="none" stroke="rgba(12,12,12,0.45)" strokeWidth="6" />
-      </svg>
+      {!isDeathFrame && (
+        <svg
+          className="absolute bottom-[36%] left-0 h-[22%] w-full opacity-50 preintro-wave-flicker"
+          viewBox="0 0 1200 200"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path d="M-20 112 C90 81 178 141 290 106 C420 66 496 139 626 101 C776 57 869 130 1006 96 C1098 73 1162 91 1220 78" fill="none" stroke="rgba(245,245,245,0.42)" strokeWidth="7" />
+          <path d="M-15 147 C104 126 189 167 306 139 C429 110 541 161 665 134 C786 107 893 167 1018 131 C1095 108 1163 139 1220 119" fill="none" stroke="rgba(12,12,12,0.45)" strokeWidth="6" />
+        </svg>
+      )}
     </>
   );
 }
 
 function RainFlecks() {
   return (
-    <div className="absolute inset-x-0 top-0 h-1/3 overflow-hidden preintro-rain-flecks" aria-hidden="true">
-      {Array.from({ length: 52 }, (_, index) => (
-        <span key={index} style={{ left: `${1 + index * 1.95}%`, animationDelay: `${index * -74}ms` }} />
+    <div className="absolute inset-0 overflow-hidden preintro-rain-flecks" aria-hidden="true">
+      {Array.from({ length: 96 }, (_, index) => (
+        <span
+          key={index}
+          style={{
+            left: `${(index * 37) % 101}%`,
+            top: `${-10 + ((index * 29) % 116)}%`,
+            animationDelay: `${index * -63}ms`,
+          }}
+        />
       ))}
     </div>
   );

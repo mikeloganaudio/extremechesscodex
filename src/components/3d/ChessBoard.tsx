@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { OrbitControls, Text } from "@react-three/drei";
 import * as THREE from "three";
-import type { GameState, Mine, Move, Piece, RubiksShift, Square, SnakeLadder } from "@/game/types";
+import type { GameState, Mine, Move, Piece, RubiksShift, RulesConfig, Square, SnakeLadder } from "@/game/types";
+import { getLegalTurnActions } from "@/game/engine";
 import type { BoardThemeConfig } from "@/levels/types";
 import { ChessPiece } from "./ChessPiece";
 import { BoardEnvironment } from "./BoardEnvironment";
 import { SnakeLadderOverlay } from "./SnakeLadder3D";
-import { boardToWorld } from "@/utils/boardUtils";
+import { BOARD_OFFSET, boardToWorld } from "@/utils/boardUtils";
 import { BOARD_ELEVATION, BOARD_TARGET } from "./sceneLayout";
 
 const SQUARE_SIZE = 1;
@@ -591,10 +592,12 @@ function BoardSquare({
           scale={isRubiksDragOrigin ? [1.04, 1.04, 1.04] : [1, 1, 1]}
           receiveShadow
           onPointerDown={(e) => {
+            if (e.button !== 0) return;
             e.stopPropagation();
             onDragStart(row, col, e.point);
           }}
           onPointerUp={(e) => {
+            if (e.button !== 0) return;
             e.stopPropagation();
             onDragEnd(row, col, e.point);
           }}
@@ -645,10 +648,12 @@ function BoardSquare({
         position={displayPosition}
         receiveShadow
         onPointerDown={(e) => {
+          if (e.button !== 0) return;
           e.stopPropagation();
           onDragStart(row, col, e.point);
         }}
         onPointerUp={(e) => {
+          if (e.button !== 0) return;
           e.stopPropagation();
           onDragEnd(row, col, e.point);
         }}
@@ -1242,12 +1247,35 @@ interface SceneProps {
   snakesAndLadders: SnakeLadder[];
   mines: Mine[];
   theme: BoardThemeConfig;
+  rules: RulesConfig;
 }
 
 interface RubiksDragState {
   start: Square;
   axis: RubiksShift["axis"] | null;
   amount: number;
+}
+
+interface PieceDragState {
+  pieceId: string;
+  from: Square;
+  current: [number, number, number];
+  target: Square | null;
+  legalTargets: Square[];
+  hasMoved: boolean;
+}
+
+function getSquareFromWorldPoint(point: THREE.Vector3): Square | null {
+  const col = Math.round(point.x - BOARD_OFFSET);
+  const row = Math.round(-point.z - BOARD_OFFSET);
+
+  if (row < 0 || row > 7 || col < 0 || col > 7) return null;
+  return { row, col };
+}
+
+function getLiftedPiecePosition(square: Square): [number, number, number] {
+  const [x, , z] = boardToWorld(square.row, square.col);
+  return [x, 0, z];
 }
 
 function getRubiksShiftFromDrag(drag: RubiksDragState | null): RubiksShift | null {
@@ -2475,11 +2503,19 @@ function Scene({
   snakesAndLadders,
   mines,
   theme,
+  rules,
 }: SceneProps) {
+  const { camera, gl } = useThree();
   const [hoveredSquare, setHoveredSquare] = useState<Square | null>(null);
   const [rubiksDrag, setRubiksDrag] = useState<RubiksDragState | null>(null);
+  const [pieceDrag, setPieceDrag] = useState<PieceDragState | null>(null);
+  const pieceDragRef = useRef<PieceDragState | null>(null);
   const rubiksDragStart = useRef<{ square: Square; worldX: number; worldZ: number } | null>(null);
   const rubiksCheckHold = useRef<{ square: Square; timer: number; warned: boolean } | null>(null);
+  const pieceDragRaycaster = useRef(new THREE.Raycaster());
+  const pieceDragPointer = useRef(new THREE.Vector2());
+  const pieceDragPlane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), -BOARD_ELEVATION));
+  const pieceDragIntersection = useRef(new THREE.Vector3());
   const rubiksPreviewShift = getRubiksShiftFromDrag(rubiksDrag);
 
   const handleHover = useCallback(
@@ -2489,10 +2525,55 @@ function Scene({
     [],
   );
 
+  const setActivePieceDrag = useCallback((nextDrag: PieceDragState | null) => {
+    pieceDragRef.current = nextDrag;
+    setPieceDrag(nextDrag);
+  }, []);
+
+  const startPieceDrag = useCallback(
+    (piece: Piece) => {
+      if (piece.color !== gameState.currentTurn) return;
+      if (gameState.status === "checkmate" || gameState.status === "stalemate") return;
+      if (gameState.promotionPending) return;
+
+      const legalTargets = getLegalTurnActions(gameState, rules)
+        .filter(
+          (action) =>
+            action.kind === "move" &&
+            action.move.from.row === piece.row &&
+            action.move.from.col === piece.col,
+        )
+        .map((action) => (action.kind === "move" ? action.move.to : null))
+        .filter((square): square is Square => !!square);
+
+      setActivePieceDrag({
+        pieceId: piece.id,
+        from: { row: piece.row, col: piece.col },
+        current: getLiftedPiecePosition({ row: piece.row, col: piece.col }),
+        target: null,
+        legalTargets,
+        hasMoved: false,
+      });
+      onRubiksDragActiveChange?.(true);
+      onSquareClick(piece.row, piece.col);
+    },
+    [gameState, onRubiksDragActiveChange, onSquareClick, rules, setActivePieceDrag],
+  );
+
   const handleSquarePointerDown = useCallback(
     (row: number, col: number, point: THREE.Vector3) => {
+      if (pieceDragRef.current) return;
+      const pieceOnSquare = gameState.pieces.find(
+        (piece) =>
+          piece.row === row &&
+          piece.col === col &&
+          piece.color === gameState.currentTurn,
+      );
+      if (pieceOnSquare) {
+        startPieceDrag(pieceOnSquare);
+        return;
+      }
       if (theme.boardDecor !== "rubiks" || !onRubiksShift) {
-        onSquareClick(row, col);
         return;
       }
       if (gameState.status === "check") {
@@ -2511,7 +2592,16 @@ function Scene({
       setRubiksDrag({ start: { row, col }, axis: null, amount: 0 });
       onRubiksDragActiveChange?.(true);
     },
-    [gameState.status, onRubiksCheckBlocked, onRubiksDragActiveChange, onRubiksShift, onSquareClick, theme.boardDecor],
+    [
+      gameState.currentTurn,
+      gameState.pieces,
+      gameState.status,
+      onRubiksCheckBlocked,
+      onRubiksDragActiveChange,
+      onRubiksShift,
+      startPieceDrag,
+      theme.boardDecor,
+    ],
   );
 
   const updateRubiksDragPreview = useCallback((point: THREE.Vector3) => {
@@ -2529,7 +2619,12 @@ function Scene({
 
   const handleSquarePointerUp = useCallback(
     (row: number, col: number, point: THREE.Vector3) => {
-      if (theme.boardDecor !== "rubiks" || !onRubiksShift) return;
+      if (pieceDrag) return;
+
+      if (theme.boardDecor !== "rubiks" || !onRubiksShift) {
+        onSquareClick(row, col);
+        return;
+      }
 
       const blockedHold = rubiksCheckHold.current;
       if (blockedHold) {
@@ -2569,6 +2664,71 @@ function Scene({
     [onRubiksDragActiveChange, onRubiksShift, onSquareClick, rubiksDrag, theme.boardDecor, updateRubiksDragPreview],
   );
 
+  const handlePiecePointerDown = useCallback(
+    (piece: Piece) => {
+      startPieceDrag(piece);
+    },
+    [startPieceDrag],
+  );
+
+  const updatePieceDragPreview = useCallback((point: THREE.Vector3) => {
+    const drag = pieceDragRef.current;
+    if (!drag) return;
+    const square = getSquareFromWorldPoint(point);
+    const target =
+      square &&
+      drag.legalTargets.some((move) => move.row === square.row && move.col === square.col)
+        ? square
+        : null;
+    const hasMoved =
+      !!target && (target.row !== drag.from.row || target.col !== drag.from.col);
+    const nextDrag = {
+      ...drag,
+      current: getLiftedPiecePosition(target ?? drag.from),
+      target,
+      hasMoved,
+    };
+    setActivePieceDrag(nextDrag);
+  }, [setActivePieceDrag]);
+
+  const getPieceDragPointFromPointer = useCallback(
+    (event: PointerEvent) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      pieceDragPointer.current.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      pieceDragRaycaster.current.setFromCamera(pieceDragPointer.current, camera);
+      const hit = pieceDragRaycaster.current.ray.intersectPlane(
+        pieceDragPlane.current,
+        pieceDragIntersection.current,
+      );
+      return hit ? pieceDragIntersection.current : null;
+    },
+    [camera, gl.domElement],
+  );
+
+  const finishPieceDrag = useCallback(
+    (point: THREE.Vector3) => {
+      const drag = pieceDragRef.current;
+      setActivePieceDrag(null);
+      onRubiksDragActiveChange?.(false);
+      if (!drag) return;
+
+      const pointTarget = getSquareFromWorldPoint(point);
+      const target = pointTarget ?? drag.target;
+      if (!target) {
+        return;
+      }
+      if (!drag.hasMoved && target.row === drag.from.row && target.col === drag.from.col) {
+        return;
+      }
+
+      onSquareClick(target.row, target.col);
+    },
+    [onRubiksDragActiveChange, onSquareClick, setActivePieceDrag],
+  );
+
   const cancelRubiksDrag = useCallback(() => {
     if (rubiksCheckHold.current) {
       window.clearTimeout(rubiksCheckHold.current.timer);
@@ -2580,16 +2740,56 @@ function Scene({
     onRubiksDragActiveChange?.(false);
   }, [onRubiksDragActiveChange]);
 
+  const cancelPieceDrag = useCallback(() => {
+    if (!pieceDragRef.current) return;
+    setActivePieceDrag(null);
+    onRubiksDragActiveChange?.(false);
+  }, [onRubiksDragActiveChange, setActivePieceDrag]);
+
   useEffect(() => {
     window.addEventListener("pointerup", cancelRubiksDrag);
     window.addEventListener("blur", cancelRubiksDrag);
+    window.addEventListener("blur", cancelPieceDrag);
 
     return () => {
       window.removeEventListener("pointerup", cancelRubiksDrag);
       window.removeEventListener("blur", cancelRubiksDrag);
+      window.removeEventListener("blur", cancelPieceDrag);
       cancelRubiksDrag();
+      cancelPieceDrag();
     };
-  }, [cancelRubiksDrag]);
+  }, [cancelPieceDrag, cancelRubiksDrag]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!pieceDragRef.current) return;
+      const point = getPieceDragPointFromPointer(event);
+      if (point) updatePieceDragPreview(point);
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (!pieceDragRef.current) return;
+      const point = getPieceDragPointFromPointer(event);
+      if (point) {
+        finishPieceDrag(point);
+      } else {
+        cancelPieceDrag();
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [
+    cancelPieceDrag,
+    finishPieceDrag,
+    getPieceDragPointFromPointer,
+    updatePieceDragPreview,
+  ]);
 
   const lastMove =
     gameState.moveHistory.length > 0
@@ -2726,6 +2926,7 @@ function Scene({
         />
 
         {gameState.pieces.map((piece) => {
+          const isDraggedPiece = pieceDrag?.pieceId === piece.id;
           const [wx, wy, wz] = boardToWorld(piece.row, piece.col);
           const rubiksPreview = getRubiksPreviewOffsets(
             piece.row,
@@ -2737,6 +2938,7 @@ function Scene({
             wy + rubiksPreview.visualOffset[1],
             wz + rubiksPreview.visualOffset[2],
           ];
+          const displayPosition = isDraggedPiece ? pieceDrag.current : previewPosition;
           const isSelected =
             gameState.selectedSquare?.row === piece.row &&
             gameState.selectedSquare?.col === piece.col;
@@ -2744,13 +2946,25 @@ function Scene({
             hoveredSquare?.row === piece.row && hoveredSquare?.col === piece.col;
 
           return (
-            <group key={piece.id}>
+            <group
+              key={piece.id}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+                handlePiecePointerDown(piece);
+              }}
+            >
+              <mesh position={[displayPosition[0], displayPosition[1] + 0.58, displayPosition[2]]}>
+                <cylinderGeometry args={[0.42, 0.36, 1.22, 12]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
               <ChessPiece
                 type={piece.type}
                 color={piece.color}
-                position={previewPosition}
+                position={displayPosition}
                 isSelected={isSelected}
                 isHovered={isHovered}
+                isDragging={isDraggedPiece}
                 visualVariant={theme.boardDecor === "racing" ? "racing" : "default"}
               />
               {rubiksPreview.wrapOffset && (
@@ -2784,6 +2998,7 @@ interface ChessBoardProps {
   snakesAndLadders: SnakeLadder[];
   mines: Mine[];
   theme: BoardThemeConfig;
+  rules: RulesConfig;
   cameraMode: "intro" | "intro-hold" | "play";
   cameraSequenceKey: number;
   freeCamera: boolean;
@@ -2797,16 +3012,30 @@ export function ChessBoard3D({
   snakesAndLadders,
   mines,
   theme,
+  rules,
   cameraMode,
   cameraSequenceKey,
   freeCamera,
 }: ChessBoardProps) {
   const effectiveCameraMode = freeCamera ? "free" : cameraMode;
   const [rubiksDragActive, setRubiksDragActive] = useState(false);
+  const orbitControlsRef = useRef<any>(null);
 
   useEffect(() => {
     setRubiksDragActive(false);
   }, [theme.id, freeCamera, cameraMode]);
+
+  useEffect(() => {
+    const controls = orbitControlsRef.current;
+    if (!controls) return;
+
+    controls.mouseButtons.LEFT = null;
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+    controls.touches.ONE = THREE.TOUCH.ROTATE;
+    controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
+    controls.update();
+  }, [effectiveCameraMode, freeCamera, rubiksDragActive]);
 
   return (
     <Canvas
@@ -2823,6 +3052,10 @@ export function ChessBoard3D({
       }}
       style={{ width: "100%", height: "100%" }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
+      onCreated={({ gl }) => {
+        gl.domElement.oncontextmenu = (event) => event.preventDefault();
+      }}
+      onContextMenu={(event) => event.preventDefault()}
     >
       <CinematicCamera mode={effectiveCameraMode} sequenceKey={cameraSequenceKey} theme={theme} />
       <CameraModePose mode={effectiveCameraMode} theme={theme} />
@@ -2836,8 +3069,10 @@ export function ChessBoard3D({
         snakesAndLadders={snakesAndLadders}
         mines={mines}
         theme={theme}
+        rules={rules}
       />
       <OrbitControls
+        ref={orbitControlsRef}
         enabled={effectiveCameraMode !== "intro" && !rubiksDragActive}
         enablePan={freeCamera}
         minPolarAngle={Math.PI / 9}
@@ -2846,6 +3081,11 @@ export function ChessBoard3D({
         maxDistance={freeCamera ? 80 : 20}
         target={[0, freeCamera ? BOARD_ELEVATION + 1.2 : BOARD_ELEVATION, 0]}
         screenSpacePanning={freeCamera}
+        mouseButtons={{
+          LEFT: null as unknown as THREE.MOUSE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.ROTATE,
+        }}
         touches={{
           ONE: THREE.TOUCH.ROTATE,
           TWO: THREE.TOUCH.DOLLY_ROTATE,

@@ -233,6 +233,7 @@ export default function ChessGame() {
               snakesAndLadders={levelRuntime.snakesAndLadders}
               mines={levelRuntime.mines}
               theme={activeLevel.theme}
+              rules={activeRules}
               cameraMode={
                 phase === "intro-board"
                   ? introFadeStage === "fade-in"
@@ -306,12 +307,12 @@ export default function ChessGame() {
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
               <p className="text-stone-600 text-xs whitespace-nowrap">
                 {freeCameraEnabled
-                  ? "Free camera - Drag to orbit - Right-drag to pan - Wheel or pinch to zoom"
+                  ? "Free camera - Right-drag to orbit - Middle-drag to pan - Wheel or pinch to zoom"
                   : opponentThinking
                     ? "Death is considering..."
                     : activeRules.rubiksMode
-                    ? "Tap a piece to move - Drag across a tile row or file to shift it - Pinch to zoom"
-                    : "Tap a piece - Tap a highlighted square to move - Pinch to zoom - Drag to orbit"}
+                    ? "Drag pieces to highlighted squares - Drag rows or files to shift them - Right-drag to orbit"
+                    : "Drag pieces to highlighted squares - Or tap piece then highlighted square - Right-drag to orbit"}
               </p>
             </div>
           </>

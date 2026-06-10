@@ -312,6 +312,7 @@ interface ChessPieceProps {
   position: [number, number, number];
   isSelected: boolean;
   isHovered?: boolean;
+  isDragging?: boolean;
   visualVariant?: PieceVisualVariant;
 }
 
@@ -321,6 +322,7 @@ export function ChessPiece({
   position,
   isSelected,
   isHovered = false,
+  isDragging = false,
   visualVariant = "default",
 }: ChessPieceProps) {
   const groupRef = useRef<THREE.Group>(null);
@@ -334,6 +336,12 @@ export function ChessPiece({
 
   useEffect(() => {
     const nextTarget = new THREE.Vector3(...position);
+    if (isDragging) {
+      moveTarget.current.copy(nextTarget);
+      moveProgress.current = 1;
+      return;
+    }
+
     if (nextTarget.distanceTo(moveTarget.current) < 0.001) return;
 
     moveStart.current.copy(currentPosition.current);
@@ -342,7 +350,7 @@ export function ChessPiece({
     if (type !== "knight") {
       liftY.current = 0;
     }
-  }, [position, type]);
+  }, [isDragging, position, type]);
 
   useEffect(() => {
     if (!groupRef.current || color !== "black") return;
@@ -357,27 +365,31 @@ export function ChessPiece({
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
-    const moveDuration = type === "knight" ? 0.62 : 0.74;
-    moveProgress.current = Math.min(1, moveProgress.current + delta / moveDuration);
-    const easedMove =
-      moveProgress.current *
-      moveProgress.current *
-      (3 - 2 * moveProgress.current);
-    currentPosition.current.lerpVectors(moveStart.current, moveTarget.current, easedMove);
+    if (isDragging) {
+      currentPosition.current.lerp(moveTarget.current, Math.min(delta * 8.5, 1));
+    } else {
+      const moveDuration = type === "knight" ? 0.62 : 0.74;
+      moveProgress.current = Math.min(1, moveProgress.current + delta / moveDuration);
+      const easedMove =
+        moveProgress.current *
+        moveProgress.current *
+        (3 - 2 * moveProgress.current);
+      currentPosition.current.lerpVectors(moveStart.current, moveTarget.current, easedMove);
+    }
 
-    const targetLift = isSelected ? 0.48 : isHovered ? 0.11 : 0;
-    liftY.current += (targetLift - liftY.current) * Math.min(delta * 6.5, 1);
+    const targetLift = isDragging ? 0.42 : isSelected ? 0.48 : isHovered ? 0.11 : 0;
+    liftY.current += (targetLift - liftY.current) * Math.min(delta * 5.2, 1);
 
     const isMoving = moveProgress.current < 1;
     const knightHop = type === "knight" && isMoving
       ? Math.sin(moveProgress.current * Math.PI) * 0.58
       : 0;
 
-    const selectedSway = isSelected ? Math.sin(clock.elapsedTime * 1.4) : 0;
-    const targetTiltX = isSelected ? 0.12 + selectedSway * 0.025 : 0;
-    const targetTiltZ = isSelected ? -0.1 + Math.cos(clock.elapsedTime * 1.2) * 0.02 : 0;
-    tiltX.current += (targetTiltX - tiltX.current) * Math.min(delta * 5.5, 1);
-    tiltZ.current += (targetTiltZ - tiltZ.current) * Math.min(delta * 5.5, 1);
+    const selectedSway = isSelected || isDragging ? Math.sin(clock.elapsedTime * 1.4) : 0;
+    const targetTiltX = isSelected || isDragging ? 0.12 + selectedSway * 0.025 : 0;
+    const targetTiltZ = isSelected || isDragging ? -0.1 + Math.cos(clock.elapsedTime * 1.2) * 0.02 : 0;
+    tiltX.current += (targetTiltX - tiltX.current) * Math.min(delta * 4.6, 1);
+    tiltZ.current += (targetTiltZ - tiltZ.current) * Math.min(delta * 4.6, 1);
 
     groupRef.current.position.set(
       currentPosition.current.x,
@@ -386,7 +398,7 @@ export function ChessPiece({
     );
     groupRef.current.rotation.set(
       tiltX.current,
-      isSelected ? selectedSway * 0.08 : 0,
+      isSelected || isDragging ? selectedSway * 0.08 : 0,
       tiltZ.current,
     );
   });
