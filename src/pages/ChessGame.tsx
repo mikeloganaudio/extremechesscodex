@@ -23,6 +23,7 @@ export default function ChessGame() {
   const [phase, setPhase] = useState<CampaignPhase>("intro-video");
   const [cameraSequenceKey, setCameraSequenceKey] = useState(0);
   const [freeCameraEnabled, setFreeCameraEnabled] = useState(false);
+  const [dragToMoveEnabled, setDragToMoveEnabled] = useState(false);
   const [introFadeStage, setIntroFadeStage] = useState<"none" | "fade-out" | "hold" | "fade-in" | "slow-fade-in">("none");
   const [boardIntroReady, setBoardIntroReady] = useState(false);
   const [rubiksCheckMessageVisible, setRubiksCheckMessageVisible] = useState(false);
@@ -44,6 +45,8 @@ export default function ChessGame() {
     handleTurnAction,
     handlePromotion,
     resetGame,
+    undoLastMove,
+    canUndo,
     activatePawnBuff,
     deactivatePawnBuff,
   } = useChessGame(activeRules);
@@ -234,6 +237,7 @@ export default function ChessGame() {
               mines={levelRuntime.mines}
               theme={activeLevel.theme}
               rules={activeRules}
+              dragToMoveEnabled={dragToMoveEnabled}
               cameraMode={
                 phase === "intro-board"
                   ? introFadeStage === "fade-in"
@@ -266,42 +270,28 @@ export default function ChessGame() {
           </div>
         )}
 
+        <RulesPanel
+          gameState={gameState}
+          level={activeLevel}
+          snakesAndLadders={levelRuntime.snakesAndLadders}
+          mines={levelRuntime.mines}
+          dragToMoveEnabled={dragToMoveEnabled}
+          freeCameraEnabled={freeCameraEnabled}
+          onDragToMoveChange={setDragToMoveEnabled}
+          onFreeCameraChange={setFreeCameraEnabled}
+          onResetGame={resetGame}
+          onUndoMove={undoLastMove}
+          canUndoMove={canUndo}
+          onActivatePawnBuff={activatePawnBuff}
+          onDeactivatePawnBuff={deactivatePawnBuff}
+          onSetSnakesAndLadders={handleSetSnakesAndLadders}
+          onGenerateSnakesAndLadders={handleGenerateSnakesAndLadders}
+        />
+
         {phase === "playing" && (
           <>
             <div className="absolute bottom-4 right-4 z-10">
               <MoveHistory moves={gameState.moveHistory} />
-            </div>
-
-            <div className="absolute bottom-4 left-4 z-10 flex gap-2 items-end">
-              <button
-                onClick={resetGame}
-                className="px-4 py-2 bg-stone-800/80 hover:bg-stone-700/80 backdrop-blur border border-stone-700 text-stone-300 text-sm rounded-lg transition-colors"
-              >
-                New Game
-              </button>
-              <button
-                onClick={() => setFreeCameraEnabled((enabled) => !enabled)}
-                className={`px-4 py-2 backdrop-blur border text-sm rounded-lg transition-colors ${
-                  freeCameraEnabled
-                    ? "bg-sky-200/90 hover:bg-sky-100/90 border-sky-100 text-stone-950"
-                    : "bg-stone-800/80 hover:bg-stone-700/80 border-stone-700 text-stone-300"
-                }`}
-              >
-                {freeCameraEnabled ? "Return Camera" : "Free Camera"}
-              </button>
-            </div>
-
-            <div className="absolute top-16 right-4 z-20">
-              <RulesPanel
-                gameState={gameState}
-                level={activeLevel}
-                snakesAndLadders={levelRuntime.snakesAndLadders}
-                mines={levelRuntime.mines}
-                onActivatePawnBuff={activatePawnBuff}
-                onDeactivatePawnBuff={deactivatePawnBuff}
-                onSetSnakesAndLadders={handleSetSnakesAndLadders}
-                onGenerateSnakesAndLadders={handleGenerateSnakesAndLadders}
-              />
             </div>
 
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
@@ -311,8 +301,10 @@ export default function ChessGame() {
                   : opponentThinking
                     ? "Death is considering..."
                     : activeRules.rubiksMode
-                    ? "Drag pieces to highlighted squares - Drag rows or files to shift them - Right-drag to orbit"
-                    : "Drag pieces to highlighted squares - Or tap piece then highlighted square - Right-drag to orbit"}
+                    ? `${dragToMoveEnabled ? "Drag pieces to highlighted squares - " : "Tap piece then highlighted square - "}Drag rows or files to shift them - Right-drag to orbit`
+                    : dragToMoveEnabled
+                    ? "Drag pieces to highlighted squares - Or tap piece then highlighted square - Right-drag to orbit"
+                    : "Tap piece - Tap highlighted square - Right-drag to orbit"}
               </p>
             </div>
           </>

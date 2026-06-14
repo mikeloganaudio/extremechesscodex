@@ -1248,6 +1248,7 @@ interface SceneProps {
   mines: Mine[];
   theme: BoardThemeConfig;
   rules: RulesConfig;
+  dragToMoveEnabled: boolean;
 }
 
 interface RubiksDragState {
@@ -2504,6 +2505,7 @@ function Scene({
   mines,
   theme,
   rules,
+  dragToMoveEnabled,
 }: SceneProps) {
   const { camera, gl } = useThree();
   const [hoveredSquare, setHoveredSquare] = useState<Square | null>(null);
@@ -2570,7 +2572,9 @@ function Scene({
           piece.color === gameState.currentTurn,
       );
       if (pieceOnSquare) {
-        startPieceDrag(pieceOnSquare);
+        if (dragToMoveEnabled) {
+          startPieceDrag(pieceOnSquare);
+        }
         return;
       }
       if (theme.boardDecor !== "rubiks" || !onRubiksShift) {
@@ -2596,6 +2600,7 @@ function Scene({
       gameState.currentTurn,
       gameState.pieces,
       gameState.status,
+      dragToMoveEnabled,
       onRubiksCheckBlocked,
       onRubiksDragActiveChange,
       onRubiksShift,
@@ -2948,16 +2953,31 @@ function Scene({
           return (
             <group
               key={piece.id}
-              onPointerDown={(e) => {
-                if (e.button !== 0) return;
-                e.stopPropagation();
-                handlePiecePointerDown(piece);
-              }}
+              onPointerDown={
+                dragToMoveEnabled
+                  ? (e) => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation();
+                      handlePiecePointerDown(piece);
+                    }
+                  : undefined
+              }
+              onPointerUp={
+                !dragToMoveEnabled
+                  ? (e) => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation();
+                      onSquareClick(piece.row, piece.col);
+                    }
+                  : undefined
+              }
             >
-              <mesh position={[displayPosition[0], displayPosition[1] + 0.58, displayPosition[2]]}>
-                <cylinderGeometry args={[0.42, 0.36, 1.22, 12]} />
-                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-              </mesh>
+              {dragToMoveEnabled && (
+                <mesh position={[displayPosition[0], displayPosition[1] + 0.58, displayPosition[2]]}>
+                  <cylinderGeometry args={[0.42, 0.36, 1.22, 12]} />
+                  <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                </mesh>
+              )}
               <ChessPiece
                 type={piece.type}
                 color={piece.color}
@@ -2999,6 +3019,7 @@ interface ChessBoardProps {
   mines: Mine[];
   theme: BoardThemeConfig;
   rules: RulesConfig;
+  dragToMoveEnabled: boolean;
   cameraMode: "intro" | "intro-hold" | "play";
   cameraSequenceKey: number;
   freeCamera: boolean;
@@ -3013,6 +3034,7 @@ export function ChessBoard3D({
   mines,
   theme,
   rules,
+  dragToMoveEnabled,
   cameraMode,
   cameraSequenceKey,
   freeCamera,
@@ -3070,6 +3092,7 @@ export function ChessBoard3D({
         mines={mines}
         theme={theme}
         rules={rules}
+        dragToMoveEnabled={dragToMoveEnabled}
       />
       <OrbitControls
         ref={orbitControlsRef}

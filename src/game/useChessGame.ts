@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { GameState, PieceType, RulesConfig, RubiksShift, TurnAction } from "./types";
 import {
   applyRubiksShift,
@@ -13,12 +13,33 @@ const PAWN_BUFF_DURATION = 3; // half-moves the buff lasts
 
 export function useChessGame(rules: RulesConfig = defaultRules) {
   const [gameState, setGameState] = useState<GameState>(createInitialGameState);
+  const undoStackRef = useRef<GameState[]>([]);
+
+  const pushUndoState = useCallback((state: GameState) => {
+    undoStackRef.current.push({
+      ...state,
+      pieces: state.pieces.map((piece) => ({ ...piece })),
+      selectedSquare: null,
+      validMoves: [],
+      moveHistory: state.moveHistory.map((move) => ({ ...move })),
+      capturedWhite: state.capturedWhite.map((piece) => ({ ...piece })),
+      capturedBlack: state.capturedBlack.map((piece) => ({ ...piece })),
+      enPassantTarget: state.enPassantTarget ? { ...state.enPassantTarget } : null,
+      promotionPending: state.promotionPending ? { ...state.promotionPending } : null,
+    });
+  }, []);
 
   const handleSquareSelect = useCallback(
     (row: number, col: number) => {
-      setGameState((prev) => selectSquare(prev, row, col, rules));
+      setGameState((prev) => {
+        const next = selectSquare(prev, row, col, rules);
+        if (next.moveHistory.length > prev.moveHistory.length) {
+          pushUndoState(prev);
+        }
+        return next;
+      });
     },
-    [rules],
+    [pushUndoState, rules],
   );
 
   const handlePromotion = useCallback(
@@ -30,20 +51,39 @@ export function useChessGame(rules: RulesConfig = defaultRules) {
 
   const handleRubiksShift = useCallback(
     (shift: RubiksShift) => {
-      setGameState((prev) => applyRubiksShift(prev, shift, rules));
+      setGameState((prev) => {
+        const next = applyRubiksShift(prev, shift, rules);
+        if (next.moveHistory.length > prev.moveHistory.length) {
+          pushUndoState(prev);
+        }
+        return next;
+      });
     },
-    [rules],
+    [pushUndoState, rules],
   );
 
   const handleTurnAction = useCallback(
     (action: TurnAction) => {
-      setGameState((prev) => applyTurnAction(prev, action, rules));
+      setGameState((prev) => {
+        const next = applyTurnAction(prev, action, rules);
+        if (next.moveHistory.length > prev.moveHistory.length) {
+          pushUndoState(prev);
+        }
+        return next;
+      });
     },
-    [rules],
+    [pushUndoState, rules],
   );
 
   const resetGame = useCallback(() => {
+    undoStackRef.current = [];
     setGameState(createInitialGameState());
+  }, []);
+
+  const undoLastMove = useCallback(() => {
+    const previousState = undoStackRef.current.pop();
+    if (!previousState) return;
+    setGameState(previousState);
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -83,6 +123,8 @@ export function useChessGame(rules: RulesConfig = defaultRules) {
     handleTurnAction,
     handlePromotion,
     resetGame,
+    undoLastMove,
+    canUndo: undoStackRef.current.length > 0,
     clearSelection,
     activatePawnBuff,
     deactivatePawnBuff,
