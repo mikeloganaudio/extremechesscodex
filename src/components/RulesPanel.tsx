@@ -39,9 +39,14 @@ export function RulesPanel({
   const pawnRangeMechanic = level.mechanics.find((m) => m.id === "pawn-range");
   const snakeLadderMechanic = level.mechanics.find((m) => m.id === "snakes-ladders");
   const minesweeperMechanic = level.mechanics.find((m) => m.id === "minesweeper");
+  const fogOfWarMechanic = level.mechanics.find((m) => m.id === "fog-of-war");
   const rubiksMechanic = level.mechanics.find((m) => m.id === "rubiks");
   const hasMechanics = Boolean(
-    pawnRangeMechanic || snakeLadderMechanic || minesweeperMechanic || rubiksMechanic,
+    pawnRangeMechanic ||
+      snakeLadderMechanic ||
+      minesweeperMechanic ||
+      fogOfWarMechanic ||
+      rubiksMechanic,
   );
   const snlEnabled = snakesAndLadders.length > 0;
 
@@ -218,6 +223,23 @@ export function RulesPanel({
                   </p>
                 </div>
                 <StatusPill active={mines.length > 0} label={`${mines.length} mines`} />
+              </div>
+            </section>
+          )}
+
+          {fogOfWarMechanic && (
+            <section className="rounded-lg border border-slate-400/45 bg-slate-900/30 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-stone-100 text-sm font-semibold">
+                    {fogOfWarMechanic.label}
+                  </h3>
+                  <p className="mt-1 text-stone-400 text-xs leading-relaxed">
+                    {fogOfWarMechanic.description} Black pieces remain hidden until
+                    their squares are revealed.
+                  </p>
+                </div>
+                <StatusPill active label="Active" />
               </div>
             </section>
           )}

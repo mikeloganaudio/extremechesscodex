@@ -18,6 +18,24 @@ import {
 } from "@/levels/levelRuntime";
 import type { CampaignPhase } from "@/levels/types";
 
+const FOG_START_ROWS = [0, 1];
+
+function squareKey(row: number, col: number) {
+  return `${row}:${col}`;
+}
+
+function addFogRevealArea(squares: Set<string>, row: number, col: number) {
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const nextRow = row + dr;
+      const nextCol = col + dc;
+      if (nextRow >= 0 && nextRow < 8 && nextCol >= 0 && nextCol < 8) {
+        squares.add(squareKey(nextRow, nextCol));
+      }
+    }
+  }
+}
+
 export default function ChessGame() {
   const [activeLevelIndex, setActiveLevelIndex] = useState(0);
   const [phase, setPhase] = useState<CampaignPhase>("intro-video");
@@ -37,7 +55,6 @@ export default function ChessGame() {
     () => createLevelRules(activeLevel, levelRuntime),
     [activeLevel, levelRuntime],
   );
-
   const {
     gameState,
     handleSquareSelect,
@@ -50,6 +67,28 @@ export default function ChessGame() {
     activatePawnBuff,
     deactivatePawnBuff,
   } = useChessGame(activeRules);
+  const fogExploredSquares = useMemo(() => {
+    if (activeLevel.id !== "fog-of-war") return null;
+
+    const explored = new Set<string>();
+    for (const row of FOG_START_ROWS) {
+      for (let col = 0; col < 8; col++) {
+        explored.add(squareKey(row, col));
+      }
+    }
+
+    gameState.moveHistory.forEach((move, index) => {
+      const isWhiteMove = index % 2 === 0;
+      if (!isWhiteMove || move.rubiksShift) return;
+      addFogRevealArea(
+        explored,
+        move.teleportedTo?.row ?? move.to.row,
+        move.teleportedTo?.col ?? move.to.col,
+      );
+    });
+
+    return explored;
+  }, [activeLevel.id, gameState.moveHistory]);
   const [opponentThinking, setOpponentThinking] = useState(false);
   const playerInputLocked =
     phase !== "playing" ||
@@ -238,6 +277,7 @@ export default function ChessGame() {
               theme={activeLevel.theme}
               rules={activeRules}
               dragToMoveEnabled={dragToMoveEnabled}
+              fogExploredSquares={fogExploredSquares}
               cameraMode={
                 phase === "intro-board"
                   ? introFadeStage === "fade-in"

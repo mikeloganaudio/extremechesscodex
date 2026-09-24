@@ -5,6 +5,7 @@ export type MechanicId =
   | "pawn-range"
   | "snakes-ladders"
   | "minesweeper"
+  | "fog-of-war"
   | "rubiks";
 export type GameModeId = "chess-board-3d";
 export type CampaignPhase =

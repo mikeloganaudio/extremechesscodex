@@ -206,9 +206,9 @@ export const fogOfWarLevel: LevelConfig = {
   baseRules: defaultRules,
   mechanics: [
     {
-      id: "classic-chess",
-      label: "Classic Chess",
-      description: "Placeholder level: classic rules for now, with fog of war mechanics coming later.",
+      id: "fog-of-war",
+      label: "Fog of War",
+      description: "Only explored squares are visible. White reveals the battlefield by advancing pieces.",
     },
   ],
   runtime: {

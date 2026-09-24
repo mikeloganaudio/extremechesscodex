@@ -571,17 +571,6 @@ function BoardSquare({
           <shapeGeometry args={[rubiksStickerShape]} />
           <meshLambertMaterial ref={materialRef} color={baseColor} />
         </mesh>
-        <mesh position={[0, 0.018, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
-          <shapeGeometry args={[rubiksStickerShape]} />
-          <meshBasicMaterial
-            color={isLight ? 0xffffff : 0x000000}
-            transparent
-            opacity={isLight ? 0.18 : 0.34}
-            depthWrite={false}
-            polygonOffset
-            polygonOffsetFactor={-3}
-          />
-        </mesh>
       </>
     );
 
@@ -720,6 +709,110 @@ function ValidMoveBorder({
 }
 
 /* ── Board rim ── */
+function FogOfWarOverlay({ exploredSquares }: { exploredSquares: Set<string> }) {
+  const fogTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+
+    const gradient = context.createRadialGradient(64, 64, 8, 64, 64, 64);
+    gradient.addColorStop(0, "rgba(255,255,255,0.9)");
+    gradient.addColorStop(0.45, "rgba(255,255,255,0.58)");
+    gradient.addColorStop(0.78, "rgba(255,255,255,0.22)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 128, 128);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }, []);
+
+  const fogTiles = useMemo(() => {
+    const tiles: Array<{
+      key: string;
+      row: number;
+      col: number;
+      offset: number;
+      drift: number;
+      scale: number;
+    }> = [];
+
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        if (exploredSquares.has(`${row}:${col}`)) continue;
+        const seed = (row * 41 + col * 73) % 97;
+        tiles.push({
+          key: `${row}:${col}`,
+          row,
+          col,
+          offset: seed / 97,
+          drift: 0.035 + (seed % 7) * 0.006,
+          scale: 1.04 + (seed % 5) * 0.035,
+        });
+      }
+    }
+
+    return tiles;
+  }, [exploredSquares]);
+
+  return (
+    <group>
+      {fogTiles.map((tile) => (
+        <FogOfWarTile key={tile.key} tile={tile} alphaMap={fogTexture} />
+      ))}
+    </group>
+  );
+}
+
+function FogOfWarTile({
+  tile,
+  alphaMap,
+}: {
+  tile: {
+    row: number;
+    col: number;
+    offset: number;
+    drift: number;
+    scale: number;
+  };
+  alphaMap: THREE.Texture | null;
+}) {
+  const ref = useRef<THREE.Mesh>(null);
+  const [wx, , wz] = boardToWorld(tile.row, tile.col);
+
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const t = clock.elapsedTime + tile.offset * Math.PI * 2;
+    ref.current.position.x = wx + Math.sin(t * 0.42) * tile.drift;
+    ref.current.position.z = wz + Math.cos(t * 0.36) * tile.drift;
+    ref.current.rotation.z = Math.sin(t * 0.18) * 0.12;
+    const pulse = 0.9 + Math.sin(t * 0.5) * 0.045;
+    ref.current.scale.setScalar(tile.scale * pulse);
+  });
+
+  return (
+    <mesh
+      ref={ref}
+      position={[wx, 0.255, wz]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      raycast={() => null}
+    >
+      <planeGeometry args={[1.28, 1.28]} />
+      <meshBasicMaterial
+        color={0x18201d}
+        alphaMap={alphaMap ?? undefined}
+        transparent
+        opacity={0.84}
+        depthWrite={false}
+        fog={false}
+      />
+    </mesh>
+  );
+}
+
 function BoardRim({ theme }: { theme: BoardThemeConfig }) {
   return theme.rimTexture ? (
     <TexturedBoardRim theme={theme} textureUrl={theme.rimTexture} />
@@ -1249,6 +1342,7 @@ interface SceneProps {
   theme: BoardThemeConfig;
   rules: RulesConfig;
   dragToMoveEnabled: boolean;
+  fogExploredSquares: Set<string> | null;
 }
 
 interface RubiksDragState {
@@ -2506,6 +2600,7 @@ function Scene({
   theme,
   rules,
   dragToMoveEnabled,
+  fogExploredSquares,
 }: SceneProps) {
   const { camera, gl } = useThree();
   const [hoveredSquare, setHoveredSquare] = useState<Square | null>(null);
@@ -2906,6 +3001,7 @@ function Scene({
         <BoardThemeDecor theme={theme} />
         <BoardNotation theme={theme} />
         <RubiksDragIndicator shift={rubiksPreviewShift} />
+        {fogExploredSquares && <FogOfWarOverlay exploredSquares={fogExploredSquares} />}
 
         {/* Snakes & Ladders overlay */}
         <SnakeLadderOverlay snakesAndLadders={snakesAndLadders} />
@@ -2931,6 +3027,14 @@ function Scene({
         />
 
         {gameState.pieces.map((piece) => {
+          if (
+            fogExploredSquares &&
+            piece.color === "black" &&
+            !fogExploredSquares.has(`${piece.row}:${piece.col}`)
+          ) {
+            return null;
+          }
+
           const isDraggedPiece = pieceDrag?.pieceId === piece.id;
           const [wx, wy, wz] = boardToWorld(piece.row, piece.col);
           const rubiksPreview = getRubiksPreviewOffsets(
@@ -3020,6 +3124,7 @@ interface ChessBoardProps {
   theme: BoardThemeConfig;
   rules: RulesConfig;
   dragToMoveEnabled: boolean;
+  fogExploredSquares: Set<string> | null;
   cameraMode: "intro" | "intro-hold" | "play";
   cameraSequenceKey: number;
   freeCamera: boolean;
@@ -3035,6 +3140,7 @@ export function ChessBoard3D({
   theme,
   rules,
   dragToMoveEnabled,
+  fogExploredSquares,
   cameraMode,
   cameraSequenceKey,
   freeCamera,
@@ -3093,6 +3199,7 @@ export function ChessBoard3D({
         theme={theme}
         rules={rules}
         dragToMoveEnabled={dragToMoveEnabled}
+        fogExploredSquares={fogExploredSquares}
       />
       <OrbitControls
         ref={orbitControlsRef}
