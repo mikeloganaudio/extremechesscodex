@@ -314,6 +314,8 @@ interface ChessPieceProps {
   isHovered?: boolean;
   isDragging?: boolean;
   visualVariant?: PieceVisualVariant;
+  /** Rotation inherited from an animated Rubik's cube slice. */
+  sliceRotation?: [number, number, number];
 }
 
 export function ChessPiece({
@@ -324,6 +326,7 @@ export function ChessPiece({
   isHovered = false,
   isDragging = false,
   visualVariant = "default",
+  sliceRotation = [0, 0, 0],
 }: ChessPieceProps) {
   const groupRef = useRef<THREE.Group>(null);
   const currentPosition = useRef(new THREE.Vector3(...position));
@@ -397,9 +400,9 @@ export function ChessPiece({
       currentPosition.current.z,
     );
     groupRef.current.rotation.set(
-      tiltX.current,
-      isSelected || isDragging ? selectedSway * 0.08 : 0,
-      tiltZ.current,
+      sliceRotation[0] + tiltX.current,
+      sliceRotation[1] + (isSelected || isDragging ? selectedSway * 0.08 : 0),
+      sliceRotation[2] + tiltZ.current,
     );
   });
 

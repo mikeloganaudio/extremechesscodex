@@ -23,7 +23,8 @@ export function BoardEnvironment({ theme }: BoardEnvironmentProps) {
       <StormBeachBackdrop textureUrl={theme.environment.backdropTexture} />
       <StormBeachGround theme={theme} />
       {theme.environment.mist === "heavy" && <MistBanks />}
-      <BoardStone />
+      {/* Level VII replaces the usual stone table with the Rubik's cube itself. */}
+      {theme.boardDecor !== "rubiks" && <BoardStone />}
       <DeathSeat
         position={[
           theme.environment.deathPosition[0],
@@ -243,9 +244,14 @@ function StormBeachGround({ theme }: BoardEnvironmentProps) {
     [terrainTexture],
   );
 
+  // Level VII's cube is a full physical object. Lowering its floor lets the
+  // eight-tile-high front and side faces remain visible instead of clipping
+  // through the beach plane at tabletop height.
+  const groundY = theme.boardDecor === "rubiks" ? BOARD_ELEVATION - 8.36 : -0.44;
+
   return (
     <>
-      <mesh position={[0, -0.44, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh position={[0, groundY, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[520, 520, 1, 1]} />
         <primitive object={material} attach="material" />
       </mesh>

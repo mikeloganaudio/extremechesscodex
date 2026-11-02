@@ -13,6 +13,8 @@ import { BOARD_ELEVATION, BOARD_TARGET } from "./sceneLayout";
 
 const SQUARE_SIZE = 1;
 const COL_LETTERS = ["a", "b", "c", "d", "e", "f", "g", "h"];
+const RUBIKS_CUBE_SIZE = 8.36;
+const RUBIKS_CUBE_HALF = RUBIKS_CUBE_SIZE / 2;
 
 type RubiksColorName = "white" | "yellow" | "orange" | "red" | "green" | "blue";
 
@@ -149,6 +151,7 @@ function PixelLabel({
 
 /* ── Board notation labels ── */
 function BoardNotation({ theme }: { theme: BoardThemeConfig }) {
+  if (theme.boardDecor === "rubiks") return null;
   if (theme.boardDecor === "retro-lcd") return <RetroBoardNotation />;
   if (theme.boardDecor === "rubiks") return <RubiksBoardNotation />;
   if (theme.boardDecor === "racing") return <RacingBoardNotation />;
@@ -498,7 +501,7 @@ interface BoardSquareProps {
   onDragStart: (row: number, col: number, point: THREE.Vector3) => void;
   onDragEnd: (row: number, col: number, point: THREE.Vector3) => void;
   visualOffset: [number, number, number];
-  wrapOffset: [number, number, number] | null;
+  visualRotation: [number, number, number];
   isRubiksDragOrigin: boolean;
   isRubiksDragLine: boolean;
 }
@@ -517,7 +520,7 @@ function BoardSquare({
   onDragStart,
   onDragEnd,
   visualOffset,
-  wrapOffset,
+  visualRotation,
   isRubiksDragOrigin,
   isRubiksDragLine,
 }: BoardSquareProps) {
@@ -578,6 +581,7 @@ function BoardSquare({
       <group>
         <group
           position={displayPosition}
+          rotation={visualRotation}
           scale={isRubiksDragOrigin ? [1.04, 1.04, 1.04] : [1, 1, 1]}
           receiveShadow
           onPointerDown={(e) => {
@@ -601,18 +605,6 @@ function BoardSquare({
         >
           {rubiksTile}
         </group>
-        {wrapOffset && (
-          <group
-            position={[
-              wx + visualOffset[0] + wrapOffset[0],
-              visualOffset[1],
-              wz + visualOffset[2] + wrapOffset[2],
-            ]}
-            raycast={() => null}
-          >
-            {rubiksTile}
-          </group>
-        )}
         {isRubiksDragOrigin && (
           <mesh position={[displayPosition[0], 0.08, displayPosition[2]]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
             <ringGeometry args={[0.48, 0.57, 28]} />
@@ -635,6 +627,7 @@ function BoardSquare({
     <group>
       <mesh
         position={displayPosition}
+        rotation={visualRotation}
         receiveShadow
         onPointerDown={(e) => {
           if (e.button !== 0) return;
@@ -814,6 +807,7 @@ function FogOfWarTile({
 }
 
 function BoardRim({ theme }: { theme: BoardThemeConfig }) {
+  if (theme.boardDecor === "rubiks") return null;
   return theme.rimTexture ? (
     <TexturedBoardRim theme={theme} textureUrl={theme.rimTexture} />
   ) : (
@@ -936,24 +930,46 @@ function BoardThemeDecor({ theme }: { theme: BoardThemeConfig }) {
 }
 
 function RubiksDecor() {
+  const sideColors = [
+    RUBIKS_PALETTE.red,
+    RUBIKS_PALETTE.blue,
+    RUBIKS_PALETTE.orange,
+    RUBIKS_PALETTE.green,
+    RUBIKS_PALETTE.yellow,
+    RUBIKS_PALETTE.white,
+  ];
+  const stickers = Array.from({ length: 64 }, (_, index) => sideColors[index % sideColors.length]);
+
   return (
     <group>
-      <mesh position={[0, 0.018, 4.46]} raycast={() => null}>
-        <boxGeometry args={[8.6, 0.04, 0.18]} />
-        <meshBasicMaterial color={0x050505} transparent opacity={0.88} depthWrite={false} />
+      {/* The board is the top face of an oversized physical Rubik's cube. */}
+      <mesh position={[0, -4.18, 0]} receiveShadow castShadow raycast={() => null}>
+        <boxGeometry args={[8.36, 8.36, 8.36]} />
+        <meshLambertMaterial color={0x060606} />
       </mesh>
-      <mesh position={[0, 0.018, -4.46]} raycast={() => null}>
-        <boxGeometry args={[8.6, 0.04, 0.18]} />
-        <meshBasicMaterial color={0x050505} transparent opacity={0.88} depthWrite={false} />
+      <mesh position={[0, -0.1, 0]} receiveShadow raycast={() => null}>
+        <boxGeometry args={[8.36, 0.2, 8.36]} />
+        <meshLambertMaterial color={0x090909} />
       </mesh>
-      <mesh position={[4.46, 0.018, 0]} raycast={() => null}>
-        <boxGeometry args={[0.18, 0.04, 8.6]} />
-        <meshBasicMaterial color={0x050505} transparent opacity={0.88} depthWrite={false} />
-      </mesh>
-      <mesh position={[-4.46, 0.018, 0]} raycast={() => null}>
-        <boxGeometry args={[0.18, 0.04, 8.6]} />
-        <meshBasicMaterial color={0x050505} transparent opacity={0.88} depthWrite={false} />
-      </mesh>
+      {stickers.map((color, index) => {
+        const column = index % 8;
+        const level = Math.floor(index / 8);
+        const x = column - 3.5;
+        const y = -0.5 - level;
+        const z = column - 3.5;
+        return (
+          <group key={`rubiks-side-sticker-${index}`} raycast={() => null}>
+            <mesh position={[x, y, 4.205]} rotation={[0, 0, 0]}>
+              <boxGeometry args={[0.82, 0.82, 0.06]} />
+              <meshLambertMaterial color={color} />
+            </mesh>
+            <mesh position={[4.205, y, z]} rotation={[0, 0, 0]}>
+              <boxGeometry args={[0.06, 0.82, 0.82]} />
+              <meshLambertMaterial color={sideColors[(index + 2) % sideColors.length]} />
+            </mesh>
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -1382,46 +1398,160 @@ function getRubiksShiftFromDrag(drag: RubiksDragState | null): RubiksShift | nul
     : { axis: "col", index: drag.start.col, amount: drag.amount };
 }
 
-function getRubiksPreviewOffsets(
+function wrapConveyorIndex(index: number) {
+  return ((index % 32) + 32) % 32;
+}
+
+function getConveyorTravel(startIndex: number, amount: number) {
+  if (amount === 0) return 0;
+
+  const direction = Math.sign(amount);
+  const distance = Math.abs(amount);
+  const edgeDistance = direction > 0 ? 7 - startIndex : startIndex;
+
+  if (distance <= edgeDistance) return amount;
+  if (distance <= edgeDistance + 1) {
+    return direction * (edgeDistance + (distance - edgeDistance) * 25);
+  }
+
+  return amount + direction * 24;
+}
+
+function getRubiksConveyorPosition(
+  axis: RubiksShift["axis"],
+  x: number,
+  z: number,
+  amount: number,
+) {
+  const startIndex = axis === "row"
+    ? Math.round(x + 3.5)
+    : Math.round(3.5 - z);
+  const index = wrapConveyorIndex(startIndex + getConveyorTravel(startIndex, amount));
+  const face = RUBIKS_CUBE_HALF + 0.04;
+
+  if (axis === "row") {
+    if (index < 8) return new THREE.Vector3(index - 3.5, 0, z);
+    if (index < 16) return new THREE.Vector3(face, -(index - 7) - 0.5, z);
+    if (index < 24) return new THREE.Vector3(3.5 - (index - 16), -RUBIKS_CUBE_SIZE, z);
+    return new THREE.Vector3(-face, -7.5 + (index - 24), z);
+  }
+
+  if (index < 8) return new THREE.Vector3(x, 0, 3.5 - index);
+  if (index < 16) return new THREE.Vector3(x, -(index - 7) - 0.5, -face);
+  if (index < 24) return new THREE.Vector3(x, -RUBIKS_CUBE_SIZE, -3.5 + (index - 16));
+  return new THREE.Vector3(x, -7.5 + (index - 24), face);
+}
+
+function getRubiksPreviewTransform(
   row: number,
   col: number,
   shift: RubiksShift | null,
 ): {
   visualOffset: [number, number, number];
-  wrapOffset: [number, number, number] | null;
+  visualRotation: [number, number, number];
   isLine: boolean;
 } {
   if (!shift) {
-    return { visualOffset: [0, 0, 0], wrapOffset: null, isLine: false };
+    return { visualOffset: [0, 0, 0], visualRotation: [0, 0, 0], isLine: false };
   }
 
+  const [x, , z] = boardToWorld(row, col);
+  // The cube stays still: tiles follow a square conveyor path around its faces.
   if (shift.axis === "row" && row === shift.index) {
-    const xOffset = shift.amount * SQUARE_SIZE;
-    let wrapX = 0;
-    if (col + shift.amount > 7) wrapX = -8 * SQUARE_SIZE;
-    if (col + shift.amount < 0) wrapX = 8 * SQUARE_SIZE;
+    const rotated = getRubiksConveyorPosition("row", x, z, shift.amount * SQUARE_SIZE);
 
     return {
-      visualOffset: [xOffset, 0.05, 0],
-      wrapOffset: wrapX ? [wrapX, 0, 0] : null,
+      visualOffset: [rotated.x - x, rotated.y, rotated.z - z],
+      visualRotation: [0, 0, 0],
       isLine: true,
     };
   }
 
   if (shift.axis === "col" && col === shift.index) {
-    const zOffset = -shift.amount * SQUARE_SIZE;
-    let wrapZ = 0;
-    if (row + shift.amount > 7) wrapZ = 8 * SQUARE_SIZE;
-    if (row + shift.amount < 0) wrapZ = -8 * SQUARE_SIZE;
+    const rotated = getRubiksConveyorPosition("col", x, z, shift.amount * SQUARE_SIZE);
 
     return {
-      visualOffset: [0, 0.05, zOffset],
-      wrapOffset: wrapZ ? [0, 0, wrapZ] : null,
+      visualOffset: [rotated.x - x, rotated.y, rotated.z - z],
+      visualRotation: [0, 0, 0],
       isLine: true,
     };
   }
 
-  return { visualOffset: [0, 0, 0], wrapOffset: null, isLine: false };
+  return { visualOffset: [0, 0, 0], visualRotation: [0, 0, 0], isLine: false };
+}
+
+function RubiksSliceBand({ shift }: { shift: RubiksShift | null }) {
+  if (!shift) return null;
+  // Conveyor mode moves individual tiles. The cube body itself never turns.
+  return null;
+
+  const isRank = shift.axis === "row";
+  const center = isRank
+    ? boardToWorld(shift.index, 0)[2]
+    : boardToWorld(0, shift.index)[0];
+  const angle = shift.amount * (Math.PI / 4) * (isRank ? -1 : 1);
+  const rotation: [number, number, number] = isRank ? [0, 0, angle] : [angle, 0, 0];
+  const position: [number, number, number] = isRank
+    ? [0, -RUBIKS_CUBE_HALF, center]
+    : [center, -RUBIKS_CUBE_HALF, 0];
+  const colors = [
+    RUBIKS_PALETTE.red,
+    RUBIKS_PALETTE.blue,
+    RUBIKS_PALETTE.yellow,
+    RUBIKS_PALETTE.green,
+    RUBIKS_PALETTE.orange,
+    RUBIKS_PALETTE.white,
+    RUBIKS_PALETTE.red,
+    RUBIKS_PALETTE.blue,
+  ];
+  const face = RUBIKS_CUBE_HALF + 0.08;
+
+  return (
+    <group position={position} rotation={rotation} raycast={() => null}>
+      <mesh position={[0, -0.1, 0]} castShadow>
+        <boxGeometry args={isRank ? [8.5, 8.5, 1.02] : [1.02, 8.5, 8.5]} />
+        <meshLambertMaterial color={0x111111} />
+      </mesh>
+      {Array.from({ length: 8 }, (_, index) => {
+        const offset = index - 3.5;
+        return (
+          <group key={`rubiks-slice-sticker-${index}`}>
+            {isRank ? (
+              <>
+                <mesh position={[face, offset, 0]}>
+                  <boxGeometry args={[0.065, 0.82, 0.82]} />
+                  <meshLambertMaterial color={colors[index]} />
+                </mesh>
+                <mesh position={[offset, -face, 0]}>
+                  <boxGeometry args={[0.82, 0.065, 0.82]} />
+                  <meshLambertMaterial color={colors[(index + 2) % 8]} />
+                </mesh>
+                <mesh position={[-face, offset, 0]}>
+                  <boxGeometry args={[0.065, 0.82, 0.82]} />
+                  <meshLambertMaterial color={colors[(index + 4) % 8]} />
+                </mesh>
+              </>
+            ) : (
+              <>
+                <mesh position={[0, offset, face]}>
+                  <boxGeometry args={[0.82, 0.82, 0.065]} />
+                  <meshLambertMaterial color={colors[index]} />
+                </mesh>
+                <mesh position={[0, -face, offset]}>
+                  <boxGeometry args={[0.82, 0.065, 0.82]} />
+                  <meshLambertMaterial color={colors[(index + 2) % 8]} />
+                </mesh>
+                <mesh position={[0, offset, -face]}>
+                  <boxGeometry args={[0.82, 0.82, 0.065]} />
+                  <meshLambertMaterial color={colors[(index + 4) % 8]} />
+                </mesh>
+              </>
+            )}
+          </group>
+        );
+      })}
+    </group>
+  );
 }
 
 function RubiksDragIndicator({ shift }: { shift: RubiksShift | null }) {
@@ -2712,7 +2842,7 @@ function Scene({
     const dz = point.z - start.worldZ;
     const axis: RubiksShift["axis"] = Math.abs(dx) >= Math.abs(dz) ? "row" : "col";
     const rawAmount = axis === "row" ? dx / SQUARE_SIZE : -dz / SQUARE_SIZE;
-    const amount = Math.max(-7, Math.min(7, Math.round(rawAmount)));
+    const amount = Math.max(-7, Math.min(7, rawAmount));
 
     setRubiksDrag({ start: start.square, axis, amount });
   }, []);
@@ -2930,7 +3060,7 @@ function Scene({
             piece.color !== selectedPiece.color,
         );
       const isCheck = kingInCheck?.row === row && kingInCheck?.col === col;
-      const rubiksPreview = getRubiksPreviewOffsets(row, col, rubiksPreviewShift);
+      const rubiksPreview = getRubiksPreviewTransform(row, col, rubiksPreviewShift);
       const isRubiksDragOrigin =
         rubiksDrag?.start.row === row && rubiksDrag.start.col === col;
 
@@ -2950,7 +3080,7 @@ function Scene({
           onDragStart={handleSquarePointerDown}
           onDragEnd={handleSquarePointerUp}
           visualOffset={rubiksPreview.visualOffset}
-          wrapOffset={rubiksPreview.wrapOffset}
+          visualRotation={rubiksPreview.visualRotation}
           isRubiksDragOrigin={isRubiksDragOrigin}
           isRubiksDragLine={rubiksPreview.isLine}
         />,
@@ -2999,6 +3129,7 @@ function Scene({
         {squares}
         <BoardSurfaceOverlay theme={theme} />
         <BoardThemeDecor theme={theme} />
+        <RubiksSliceBand shift={rubiksPreviewShift} />
         <BoardNotation theme={theme} />
         <RubiksDragIndicator shift={rubiksPreviewShift} />
         {fogExploredSquares && <FogOfWarOverlay exploredSquares={fogExploredSquares} />}
@@ -3037,7 +3168,7 @@ function Scene({
 
           const isDraggedPiece = pieceDrag?.pieceId === piece.id;
           const [wx, wy, wz] = boardToWorld(piece.row, piece.col);
-          const rubiksPreview = getRubiksPreviewOffsets(
+          const rubiksPreview = getRubiksPreviewTransform(
             piece.row,
             piece.col,
             rubiksPreviewShift,
@@ -3090,21 +3221,8 @@ function Scene({
                 isHovered={isHovered}
                 isDragging={isDraggedPiece}
                 visualVariant={theme.boardDecor === "racing" ? "racing" : "default"}
+                sliceRotation={rubiksPreview.visualRotation}
               />
-              {rubiksPreview.wrapOffset && (
-                <ChessPiece
-                  type={piece.type}
-                  color={piece.color}
-                  position={[
-                    previewPosition[0] + rubiksPreview.wrapOffset[0],
-                    previewPosition[1],
-                    previewPosition[2] + rubiksPreview.wrapOffset[2],
-                  ]}
-                  isSelected={false}
-                  isHovered={false}
-                  visualVariant={theme.boardDecor === "racing" ? "racing" : "default"}
-                />
-              )}
             </group>
           );
         })}
