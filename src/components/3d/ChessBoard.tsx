@@ -585,20 +585,24 @@ function BoardSquare({
           scale={isRubiksDragOrigin ? [1.04, 1.04, 1.04] : [1, 1, 1]}
           receiveShadow
           onPointerDown={(e) => {
+            if (isRubiksDragLine) return;
             if (e.button !== 0) return;
             e.stopPropagation();
             onDragStart(row, col, e.point);
           }}
           onPointerUp={(e) => {
+            if (isRubiksDragLine) return;
             if (e.button !== 0) return;
             e.stopPropagation();
             onDragEnd(row, col, e.point);
           }}
           onPointerEnter={(e) => {
+            if (isRubiksDragLine) return;
             e.stopPropagation();
             onHover(row, col, true);
           }}
           onPointerLeave={(e) => {
+            if (isRubiksDragLine) return;
             e.stopPropagation();
             onHover(row, col, false);
           }}
@@ -966,6 +970,14 @@ function RubiksDecor() {
             <mesh position={[4.205, y, z]} rotation={[0, 0, 0]}>
               <boxGeometry args={[0.06, 0.82, 0.82]} />
               <meshLambertMaterial color={sideColors[(index + 2) % sideColors.length]} />
+            </mesh>
+            <mesh position={[x, y, -4.205]} rotation={[0, 0, 0]}>
+              <boxGeometry args={[0.82, 0.82, 0.06]} />
+              <meshLambertMaterial color={sideColors[(index + 3) % sideColors.length]} />
+            </mesh>
+            <mesh position={[-4.205, y, z]} rotation={[0, 0, 0]}>
+              <boxGeometry args={[0.06, 0.82, 0.82]} />
+              <meshLambertMaterial color={sideColors[(index + 4) % sideColors.length]} />
             </mesh>
           </group>
         );
@@ -1402,21 +1414,6 @@ function wrapConveyorIndex(index: number) {
   return ((index % 32) + 32) % 32;
 }
 
-function getConveyorTravel(startIndex: number, amount: number) {
-  if (amount === 0) return 0;
-
-  const direction = Math.sign(amount);
-  const distance = Math.abs(amount);
-  const edgeDistance = direction > 0 ? 7 - startIndex : startIndex;
-
-  if (distance <= edgeDistance) return amount;
-  if (distance <= edgeDistance + 1) {
-    return direction * (edgeDistance + (distance - edgeDistance) * 25);
-  }
-
-  return amount + direction * 24;
-}
-
 function getRubiksConveyorPosition(
   axis: RubiksShift["axis"],
   x: number,
@@ -1426,20 +1423,79 @@ function getRubiksConveyorPosition(
   const startIndex = axis === "row"
     ? Math.round(x + 3.5)
     : Math.round(3.5 - z);
-  const index = wrapConveyorIndex(startIndex + getConveyorTravel(startIndex, amount));
-  const face = RUBIKS_CUBE_HALF + 0.04;
+  const rawIndex = startIndex + amount;
+  const leadingSlot = Math.floor(rawIndex);
+  const progress = rawIndex - leadingSlot;
+  const fixed = axis === "row" ? z : x;
+  const start = getRubiksConveyorSlot(axis, leadingSlot, fixed).position;
+  const end = getRubiksConveyorSlot(axis, leadingSlot + 1, fixed).position;
+
+  // A drag interpolates through each of the 32 slots, including the corners.
+  return new THREE.Vector3(...start).lerp(new THREE.Vector3(...end), progress);
+}
+
+function getRubiksConveyorRotation(axis: RubiksShift["axis"], x: number, z: number, amount: number) {
+  const startIndex = axis === "row" ? Math.round(x + 3.5) : Math.round(3.5 - z);
+  const rawIndex = startIndex + amount;
+  const leadingSlot = Math.floor(rawIndex);
+  const progress = rawIndex - leadingSlot;
+  const faceRotation = (slot: number) => {
+    const index = wrapConveyorIndex(slot);
+    if (index < 8) return new THREE.Euler(0, 0, 0);
+    if (axis === "row") {
+      if (index < 16) return new THREE.Euler(0, 0, -Math.PI / 2);
+      if (index < 24) return new THREE.Euler(0, 0, Math.PI);
+      return new THREE.Euler(0, 0, Math.PI / 2);
+    }
+    if (index < 16) return new THREE.Euler(-Math.PI / 2, 0, 0);
+    if (index < 24) return new THREE.Euler(Math.PI, 0, 0);
+    return new THREE.Euler(Math.PI / 2, 0, 0);
+  };
+  const current = new THREE.Quaternion().setFromEuler(faceRotation(leadingSlot));
+  const next = new THREE.Quaternion().setFromEuler(faceRotation(leadingSlot + 1));
+  current.slerp(next, progress);
+  const rotation = new THREE.Euler().setFromQuaternion(current);
+  return [rotation.x, rotation.y, rotation.z] as [number, number, number];
+}
+
+function getRubiksConveyorSlot(axis: RubiksShift["axis"], index: number, fixed: number) {
+  const slot = wrapConveyorIndex(index);
+  const face = RUBIKS_CUBE_HALF + 0.08;
 
   if (axis === "row") {
-    if (index < 8) return new THREE.Vector3(index - 3.5, 0, z);
-    if (index < 16) return new THREE.Vector3(face, -(index - 7) - 0.5, z);
-    if (index < 24) return new THREE.Vector3(3.5 - (index - 16), -RUBIKS_CUBE_SIZE, z);
-    return new THREE.Vector3(-face, -7.5 + (index - 24), z);
+    if (slot < 8) return { position: [slot - 3.5, 0.075, fixed], size: [0.82, 0.07, 0.82] };
+    if (slot < 16) return { position: [face, -(slot - 8) - 0.5, fixed], size: [0.07, 0.82, 0.82] };
+    if (slot < 24) return { position: [3.5 - (slot - 16), -RUBIKS_CUBE_SIZE - 0.04, fixed], size: [0.82, 0.07, 0.82] };
+    return { position: [-face, -7.5 + (slot - 24), fixed], size: [0.07, 0.82, 0.82] };
   }
 
-  if (index < 8) return new THREE.Vector3(x, 0, 3.5 - index);
-  if (index < 16) return new THREE.Vector3(x, -(index - 7) - 0.5, -face);
-  if (index < 24) return new THREE.Vector3(x, -RUBIKS_CUBE_SIZE, -3.5 + (index - 16));
-  return new THREE.Vector3(x, -7.5 + (index - 24), face);
+  if (slot < 8) return { position: [fixed, 0.075, 3.5 - slot], size: [0.82, 0.07, 0.82] };
+  if (slot < 16) return { position: [fixed, -(slot - 8) - 0.5, -face], size: [0.82, 0.82, 0.07] };
+  if (slot < 24) return { position: [fixed, -RUBIKS_CUBE_SIZE - 0.04, -3.5 + (slot - 16)], size: [0.82, 0.07, 0.82] };
+  return { position: [fixed, -7.5 + (slot - 24), face], size: [0.82, 0.82, 0.07] };
+}
+
+function getRubiksConveyorColor(axis: RubiksShift["axis"], source: number, fixed: number) {
+  if (source < 8) {
+    return axis === "row"
+      ? getRubiksSquareColor(Math.round(3.5 - fixed), source)
+      : getRubiksSquareColor(source, Math.round(fixed + 3.5));
+  }
+
+  const colors = [
+    RUBIKS_PALETTE.red,
+    RUBIKS_PALETTE.blue,
+    RUBIKS_PALETTE.orange,
+    RUBIKS_PALETTE.green,
+    RUBIKS_PALETTE.yellow,
+    RUBIKS_PALETTE.white,
+  ];
+  const sideColumn = Math.round(fixed + 3.5);
+  const sideLevel = source < 16 ? source - 8 : source < 24 ? source - 16 : 7 - (source - 24);
+  const faceOffset = axis === "row"
+    ? source < 16 ? 2 : source < 24 ? 3 : 4
+    : source < 16 ? 3 : source < 24 ? 5 : 0;
+  return colors[(sideLevel * 8 + sideColumn + faceOffset) % colors.length];
 }
 
 function getRubiksPreviewTransform(
@@ -1462,7 +1518,7 @@ function getRubiksPreviewTransform(
 
     return {
       visualOffset: [rotated.x - x, rotated.y, rotated.z - z],
-      visualRotation: [0, 0, 0],
+      visualRotation: getRubiksConveyorRotation("row", x, z, shift.amount),
       isLine: true,
     };
   }
@@ -1472,7 +1528,7 @@ function getRubiksPreviewTransform(
 
     return {
       visualOffset: [rotated.x - x, rotated.y, rotated.z - z],
-      visualRotation: [0, 0, 0],
+      visualRotation: getRubiksConveyorRotation("col", x, z, shift.amount),
       isLine: true,
     };
   }
@@ -1482,8 +1538,27 @@ function getRubiksPreviewTransform(
 
 function RubiksSliceBand({ shift }: { shift: RubiksShift | null }) {
   if (!shift) return null;
-  // Conveyor mode moves individual tiles. The cube body itself never turns.
-  return null;
+  const fixed = shift.axis === "row"
+    ? boardToWorld(shift.index, 0)[2]
+    : boardToWorld(0, shift.index)[0];
+
+  return (
+    <group raycast={() => null}>
+      {Array.from({ length: 32 }, (_, source) => {
+        const slot = getRubiksConveyorSlot(shift.axis, source + shift.amount, fixed);
+        const color = getRubiksConveyorColor(shift.axis, source, fixed);
+        return (
+          <mesh
+            key={`rubiks-conveyor-tile-${source}`}
+            position={slot.position as [number, number, number]}
+          >
+            <boxGeometry args={slot.size as [number, number, number]} />
+            <meshLambertMaterial color={color} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
 
   const isRank = shift.axis === "row";
   const center = isRank
@@ -2737,7 +2812,12 @@ function Scene({
   const [rubiksDrag, setRubiksDrag] = useState<RubiksDragState | null>(null);
   const [pieceDrag, setPieceDrag] = useState<PieceDragState | null>(null);
   const pieceDragRef = useRef<PieceDragState | null>(null);
-  const rubiksDragStart = useRef<{ square: Square; worldX: number; worldZ: number } | null>(null);
+  const rubiksDragStart = useRef<{
+    square: Square;
+    worldX: number;
+    worldZ: number;
+    axis: RubiksShift["axis"] | null;
+  } | null>(null);
   const rubiksCheckHold = useRef<{ square: Square; timer: number; warned: boolean } | null>(null);
   const pieceDragRaycaster = useRef(new THREE.Raycaster());
   const pieceDragPointer = useRef(new THREE.Vector2());
@@ -2817,7 +2897,7 @@ function Scene({
         rubiksCheckHold.current = holdState;
         return;
       }
-      rubiksDragStart.current = { square: { row, col }, worldX: point.x, worldZ: point.z };
+      rubiksDragStart.current = { square: { row, col }, worldX: point.x, worldZ: point.z, axis: null };
       setRubiksDrag({ start: { row, col }, axis: null, amount: 0 });
       onRubiksDragActiveChange?.(true);
     },
@@ -2840,9 +2920,21 @@ function Scene({
 
     const dx = point.x - start.worldX;
     const dz = point.z - start.worldZ;
-    const axis: RubiksShift["axis"] = Math.abs(dx) >= Math.abs(dz) ? "row" : "col";
+    const dominantAxis: RubiksShift["axis"] = Math.abs(dx) >= Math.abs(dz) ? "row" : "col";
+    // Lock the first deliberate direction. A single drag cannot become two
+    // perpendicular half-turns, so the preview always describes one strip.
+    if (!start.axis && Math.max(Math.abs(dx), Math.abs(dz)) >= 0.12) {
+      start.axis = dominantAxis;
+    }
+    const axis = start.axis;
+    if (!axis) return;
     const rawAmount = axis === "row" ? dx / SQUARE_SIZE : -dz / SQUARE_SIZE;
-    const amount = Math.max(-7, Math.min(7, rawAmount));
+    const clampedAmount = Math.max(-7, Math.min(7, rawAmount));
+    const nearestCell = Math.round(clampedAmount);
+    // A soft magnetic snap gives each cell a tactile, grid-aligned stop.
+    const amount = Math.abs(clampedAmount - nearestCell) < 0.16
+      ? nearestCell
+      : clampedAmount;
 
     setRubiksDrag({ start: start.square, axis, amount });
   }, []);
@@ -2876,7 +2968,7 @@ function Scene({
 
       const dx = point.x - start.worldX;
       const dz = point.z - start.worldZ;
-      const axis: RubiksShift["axis"] = drag?.axis ?? (Math.abs(dx) >= Math.abs(dz) ? "row" : "col");
+      const axis: RubiksShift["axis"] = start.axis ?? drag?.axis ?? (Math.abs(dx) >= Math.abs(dz) ? "row" : "col");
       const rawAmount = axis === "row" ? dx / SQUARE_SIZE : -dz / SQUARE_SIZE;
       const amount = Math.max(-7, Math.min(7, Math.round(rawAmount)));
 
@@ -3189,7 +3281,7 @@ function Scene({
             <group
               key={piece.id}
               onPointerDown={
-                dragToMoveEnabled
+                dragToMoveEnabled && !rubiksPreview.isLine
                   ? (e) => {
                       if (e.button !== 0) return;
                       e.stopPropagation();
@@ -3198,7 +3290,7 @@ function Scene({
                   : undefined
               }
               onPointerUp={
-                !dragToMoveEnabled
+                !dragToMoveEnabled && !rubiksPreview.isLine
                   ? (e) => {
                       if (e.button !== 0) return;
                       e.stopPropagation();
@@ -3220,6 +3312,7 @@ function Scene({
                 isSelected={isSelected}
                 isHovered={isHovered}
                 isDragging={isDraggedPiece}
+                isConveying={rubiksPreview.isLine}
                 visualVariant={theme.boardDecor === "racing" ? "racing" : "default"}
                 sliceRotation={rubiksPreview.visualRotation}
               />

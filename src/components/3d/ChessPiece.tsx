@@ -313,6 +313,7 @@ interface ChessPieceProps {
   isSelected: boolean;
   isHovered?: boolean;
   isDragging?: boolean;
+  isConveying?: boolean;
   visualVariant?: PieceVisualVariant;
   /** Rotation inherited from an animated Rubik's cube slice. */
   sliceRotation?: [number, number, number];
@@ -325,6 +326,7 @@ export function ChessPiece({
   isSelected,
   isHovered = false,
   isDragging = false,
+  isConveying = false,
   visualVariant = "default",
   sliceRotation = [0, 0, 0],
 }: ChessPieceProps) {
@@ -339,7 +341,7 @@ export function ChessPiece({
 
   useEffect(() => {
     const nextTarget = new THREE.Vector3(...position);
-    if (isDragging) {
+    if (isDragging || isConveying) {
       moveTarget.current.copy(nextTarget);
       moveProgress.current = 1;
       return;
@@ -353,7 +355,7 @@ export function ChessPiece({
     if (type !== "knight") {
       liftY.current = 0;
     }
-  }, [isDragging, position, type]);
+  }, [isConveying, isDragging, position, type]);
 
   useEffect(() => {
     if (!groupRef.current || color !== "black") return;
@@ -368,8 +370,8 @@ export function ChessPiece({
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
-    if (isDragging) {
-      currentPosition.current.lerp(moveTarget.current, Math.min(delta * 8.5, 1));
+    if (isDragging || isConveying) {
+      currentPosition.current.lerp(moveTarget.current, Math.min(delta * (isConveying ? 14 : 8.5), 1));
     } else {
       const moveDuration = type === "knight" ? 0.62 : 0.74;
       moveProgress.current = Math.min(1, moveProgress.current + delta / moveDuration);
