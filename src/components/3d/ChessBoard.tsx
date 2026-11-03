@@ -6,6 +6,7 @@ import type { GameState, Mine, Move, Piece, RubiksShift, RulesConfig, Square, Sn
 import { getLegalTurnActions } from "@/game/engine";
 import type { BoardThemeConfig } from "@/levels/types";
 import { ChessPiece } from "./ChessPiece";
+import { PhysicalRubiksCube } from "./PhysicalRubiksCube";
 import { BoardEnvironment } from "./BoardEnvironment";
 import { SnakeLadderOverlay } from "./SnakeLadder3D";
 import { BOARD_OFFSET, boardToWorld } from "@/utils/boardUtils";
@@ -153,7 +154,7 @@ function PixelLabel({
 function BoardNotation({ theme }: { theme: BoardThemeConfig }) {
   if (theme.boardDecor === "rubiks") return null;
   if (theme.boardDecor === "retro-lcd") return <RetroBoardNotation />;
-  if (theme.boardDecor === "rubiks") return <RubiksBoardNotation />;
+  if (theme.boardDecor === "rubiks-physical") return <RubiksBoardNotation />;
   if (theme.boardDecor === "racing") return <RacingBoardNotation />;
 
   const labelColor = "#b8a090";
@@ -1560,73 +1561,6 @@ function RubiksSliceBand({ shift }: { shift: RubiksShift | null }) {
     </group>
   );
 
-  const isRank = shift.axis === "row";
-  const center = isRank
-    ? boardToWorld(shift.index, 0)[2]
-    : boardToWorld(0, shift.index)[0];
-  const angle = shift.amount * (Math.PI / 4) * (isRank ? -1 : 1);
-  const rotation: [number, number, number] = isRank ? [0, 0, angle] : [angle, 0, 0];
-  const position: [number, number, number] = isRank
-    ? [0, -RUBIKS_CUBE_HALF, center]
-    : [center, -RUBIKS_CUBE_HALF, 0];
-  const colors = [
-    RUBIKS_PALETTE.red,
-    RUBIKS_PALETTE.blue,
-    RUBIKS_PALETTE.yellow,
-    RUBIKS_PALETTE.green,
-    RUBIKS_PALETTE.orange,
-    RUBIKS_PALETTE.white,
-    RUBIKS_PALETTE.red,
-    RUBIKS_PALETTE.blue,
-  ];
-  const face = RUBIKS_CUBE_HALF + 0.08;
-
-  return (
-    <group position={position} rotation={rotation} raycast={() => null}>
-      <mesh position={[0, -0.1, 0]} castShadow>
-        <boxGeometry args={isRank ? [8.5, 8.5, 1.02] : [1.02, 8.5, 8.5]} />
-        <meshLambertMaterial color={0x111111} />
-      </mesh>
-      {Array.from({ length: 8 }, (_, index) => {
-        const offset = index - 3.5;
-        return (
-          <group key={`rubiks-slice-sticker-${index}`}>
-            {isRank ? (
-              <>
-                <mesh position={[face, offset, 0]}>
-                  <boxGeometry args={[0.065, 0.82, 0.82]} />
-                  <meshLambertMaterial color={colors[index]} />
-                </mesh>
-                <mesh position={[offset, -face, 0]}>
-                  <boxGeometry args={[0.82, 0.065, 0.82]} />
-                  <meshLambertMaterial color={colors[(index + 2) % 8]} />
-                </mesh>
-                <mesh position={[-face, offset, 0]}>
-                  <boxGeometry args={[0.065, 0.82, 0.82]} />
-                  <meshLambertMaterial color={colors[(index + 4) % 8]} />
-                </mesh>
-              </>
-            ) : (
-              <>
-                <mesh position={[0, offset, face]}>
-                  <boxGeometry args={[0.82, 0.82, 0.065]} />
-                  <meshLambertMaterial color={colors[index]} />
-                </mesh>
-                <mesh position={[0, -face, offset]}>
-                  <boxGeometry args={[0.82, 0.065, 0.82]} />
-                  <meshLambertMaterial color={colors[(index + 2) % 8]} />
-                </mesh>
-                <mesh position={[0, offset, -face]}>
-                  <boxGeometry args={[0.82, 0.82, 0.065]} />
-                  <meshLambertMaterial color={colors[(index + 4) % 8]} />
-                </mesh>
-              </>
-            )}
-          </group>
-        );
-      })}
-    </group>
-  );
 }
 
 function RubiksDragIndicator({ shift }: { shift: RubiksShift | null }) {
@@ -3199,6 +3133,10 @@ function Scene({
       <pointLight position={[0, 3.8, -5.4]} intensity={0.7} color={0x8f9cb8} distance={10} />
 
       <group position={[0, BOARD_ELEVATION, 0]}>
+        {theme.boardDecor === "rubiks-physical" ? (
+          <PhysicalRubiksCube onTurnActive={onRubiksDragActiveChange} />
+        ) : (
+          <>
         {theme.boardDecor === "rubiks" && rubiksDrag && (
           <mesh
             position={[0, 0.18, 0]}
@@ -3319,6 +3257,8 @@ function Scene({
             </group>
           );
         })}
+          </>
+        )}
       </group>
     </>
   );

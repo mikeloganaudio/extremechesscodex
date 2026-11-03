@@ -403,7 +403,7 @@ function moveWouldCaptureKing(
   return getPieceAt(pieces, teleport.end.row, teleport.end.col)?.type === "king";
 }
 
-function isInCheck(pieces: Piece[], color: PieceColor, rules: RulesConfig): boolean {
+export function isInCheck(pieces: Piece[], color: PieceColor, rules: RulesConfig): boolean {
   const king = findKing(pieces, color);
   if (!king) return false;
   const enemy = color === "white" ? "black" : "white";

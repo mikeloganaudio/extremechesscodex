@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import type { PieceType, PieceColor } from "@/game/types";
 
@@ -317,6 +317,8 @@ interface ChessPieceProps {
   visualVariant?: PieceVisualVariant;
   /** Rotation inherited from an animated Rubik's cube slice. */
   sliceRotation?: [number, number, number];
+  /** Optional direct interaction handler for specialised board modes. */
+  onPointerDown?: (event: ThreeEvent<PointerEvent>) => void;
 }
 
 export function ChessPiece({
@@ -329,6 +331,7 @@ export function ChessPiece({
   isConveying = false,
   visualVariant = "default",
   sliceRotation = [0, 0, 0],
+  onPointerDown,
 }: ChessPieceProps) {
   const groupRef = useRef<THREE.Group>(null);
   const currentPosition = useRef(new THREE.Vector3(...position));
@@ -411,7 +414,7 @@ export function ChessPiece({
   const MeshComponent = PIECE_MESHES[type];
 
   return (
-    <group ref={groupRef} position={position}>
+    <group ref={groupRef} position={position} onPointerDown={onPointerDown}>
       <MeshComponent color={color} />
       {color === "black" && <BlackPieceRim />}
     </group>

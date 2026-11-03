@@ -146,7 +146,7 @@ export function CutsceneOverlay({
           </p>
           {action && (
             <button
-              onClick={action.onClick}
+              onClick={() => action.onClick()}
               className="eighth-dialog-action shrink-0"
             >
               {action.label}
@@ -187,7 +187,7 @@ const introScenes = [
   },
 ];
 
-function PreIntroStoryboard({ onComplete }: { onComplete: () => void }) {
+function PreIntroStoryboard({ onComplete }: { onComplete: (alreadyBlack?: boolean) => void }) {
   const [activeScene, setActiveScene] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
@@ -246,7 +246,7 @@ function PreIntroStoryboard({ onComplete }: { onComplete: () => void }) {
       </div>
 
       <button
-        onClick={onComplete}
+        onClick={() => onComplete()}
         className="absolute right-5 top-5 z-20 border border-stone-600/70 bg-black/55 px-3 py-2 text-[10px] uppercase tracking-[0.22em] text-stone-300 transition-colors hover:border-stone-300 hover:text-stone-100"
       >
         Skip
@@ -410,7 +410,10 @@ function getAction(
   },
 ) {
   if (phase === "intro-video") {
-    return { label: "Fade To The Board", onClick: handlers.onBeginBoardIntro };
+   return {
+  label: "Fade To The Board",
+  onClick: () => handlers.onBeginBoardIntro(),
+}; 
   }
 
   if (phase === "between-levels") {

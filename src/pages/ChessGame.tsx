@@ -340,6 +340,8 @@ export default function ChessGame() {
                   ? "Free camera - Right-drag to orbit - Middle-drag to pan - Wheel or pinch to zoom"
                   : opponentThinking
                     ? "Death is considering..."
+                    : activeLevel.theme.boardDecor === "rubiks-physical"
+                    ? "Drag across a line on any face to turn that physical layer - Right-drag to orbit"
                     : activeRules.rubiksMode
                     ? `${dragToMoveEnabled ? "Drag pieces to highlighted squares - " : "Tap piece then highlighted square - "}Drag rows or files to shift them - Right-drag to orbit`
                     : dragToMoveEnabled

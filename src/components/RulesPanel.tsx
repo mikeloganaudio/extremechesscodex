@@ -252,8 +252,9 @@ export function RulesPanel({
                     {rubiksMechanic.label}
                   </h3>
                   <p className="mt-1 text-stone-400 text-xs leading-relaxed">
-                    {rubiksMechanic.description} Drag sideways across a row or vertically
-                    across a file. Wrapped pieces reappear on the opposite edge.
+                    {level.theme.boardDecor === "rubiks-physical"
+                      ? `${rubiksMechanic.description} This experimental variant has a full board on every face; pieces are carried across faces by quarter-turns.`
+                      : `${rubiksMechanic.description} Drag sideways across a row or vertically across a file. Wrapped pieces reappear on the opposite edge.`}
                   </p>
                 </div>
                 <StatusPill active label="Active" />

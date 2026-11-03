@@ -124,3 +124,15 @@ export const rubiksBoardTheme: BoardThemeConfig = {
     fill: 0.36,
   },
 };
+
+export const physicalRubiksBoardTheme: BoardThemeConfig = {
+  ...rubiksBoardTheme,
+  id: "physical-rubiks-board",
+  label: "Physical Rubik's cube",
+  boardDecor: "rubiks-physical",
+  lighting: {
+    ambient: 0.72,
+    key: 1.36,
+    fill: 0.48,
+  },
+};

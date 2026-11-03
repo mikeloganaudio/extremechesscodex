@@ -32,7 +32,7 @@ export interface BoardThemeConfig {
   underside: number;
   boardOverlayTexture?: string;
   boardOverlayOpacity?: number;
-  boardDecor?: "racing" | "retro-lcd" | "battlefield" | "rubiks";
+  boardDecor?: "racing" | "retro-lcd" | "battlefield" | "rubiks" | "rubiks-physical";
   backgroundClassName: string;
   lighting: {
     ambient: number;

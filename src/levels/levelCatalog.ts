@@ -5,6 +5,7 @@ import {
   fogOfWarBoardTheme,
   minesweeperBoardTheme,
   racingBoardTheme,
+  physicalRubiksBoardTheme,
   rubiksBoardTheme,
   serpentsBoardTheme,
   snake2BoardTheme,
@@ -255,6 +256,38 @@ export const rubiksCubeLevel: LevelConfig = {
   },
 };
 
+export const physicalRubiksCubeLevel: LevelConfig = {
+  id: "rubiks-cube-physical",
+  chapter: 8,
+  title: "VIII. The Six-Faced Game",
+  subtitle: "There is no board. There are only surfaces waiting to turn.",
+  deathLine: "Six games at once. Try not to lose track of yourself.",
+  cutscenes: {
+    intro: [
+      "The coloured board thickens into a cube, and then another board appears on every face.",
+      "Death smiles. A piece cannot walk here. It can only be carried by the world turning beneath it.",
+      "Every quarter-turn transfers a whole line of pieces to a different game.",
+    ],
+    victory: ["The cube clicks into place. For now."],
+  },
+  mode: "chess-board-3d",
+  theme: physicalRubiksBoardTheme,
+  baseRules: defaultRules,
+  mechanics: [
+    {
+      id: "rubiks",
+      label: "Six-Faced Rubik's Chess",
+      description: "Drag a line on any visible face to turn a physical layer and carry its pieces around the cube.",
+    },
+  ],
+  runtime: {
+    startWithSnakesAndLadders: false,
+    snakeLadderCount: 0,
+    startWithMines: false,
+    mineCount: 0,
+  },
+};
+
 export const levelCatalog: LevelConfig[] = [
   firstGameLevel,
   pawnRangeLevel,
@@ -263,4 +296,5 @@ export const levelCatalog: LevelConfig[] = [
   snake2Level,
   fogOfWarLevel,
   rubiksCubeLevel,
+  physicalRubiksCubeLevel,
 ];
